@@ -22,12 +22,13 @@ if (typeof globalThis.FileReader === 'undefined') {
 const { GLTFExporter } = await import('three/examples/jsm/exporters/GLTFExporter.js');
 const { OBJExporter } = await import('three/examples/jsm/exporters/OBJExporter.js');
 
+// Returns an ArrayBuffer so this works in both Node and the browser. Node
+// callers that want a Buffer should wrap it: Buffer.from(await exportGlb(g)).
 export async function exportGlb(group) {
   const exporter = new GLTFExporter();
-  const result = await new Promise((resolve, reject) => {
+  return await new Promise((resolve, reject) => {
     exporter.parse(group, resolve, (err) => reject(err), { binary: true, onlyVisible: true, trs: false });
   });
-  return Buffer.from(result); // binary export yields an ArrayBuffer
 }
 
 export function exportObj(group) {

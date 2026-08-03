@@ -26,7 +26,7 @@ async function generate(params, { format = 'glb', outPath } = {}) {
   const target = outPath ? path.resolve(outPath) : path.join(DEFAULT_OUT, fileName);
   await fs.mkdir(path.dirname(target), { recursive: true });
 
-  if (format === 'glb') await fs.writeFile(target, await exportGlb(group));
+  if (format === 'glb') await fs.writeFile(target, Buffer.from(await exportGlb(group)));
   else if (format === 'obj') await fs.writeFile(target, exportObj(group), 'utf8');
   else await fs.writeFile(target, JSON.stringify(s, null, 2), 'utf8');
 

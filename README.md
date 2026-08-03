@@ -31,7 +31,7 @@ import { exportGlb } from 'treegen/export';
 
 const tree = buildTree({ ...presets.oak, seed: 42, detail: 1 });
 console.log(meshStats(tree));        // { meshes, triangles }
-const glb = await exportGlb(tree);   // Buffer / ArrayBuffer
+const glb = await exportGlb(tree);   // ArrayBuffer — works in Node and browser
 ```
 
 `exportGlb` shims `FileReader` when it is missing, so the same code path works
