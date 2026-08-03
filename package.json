@@ -1,0 +1,28 @@
+{
+  "name": "treegen",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stylized low-poly tree generator — browser app, MCP server, and a headless generator consumable as a library.",
+  "exports": {
+    "./generator": "./mcp/generator.js",
+    "./export": "./mcp/export.js",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "mcp": "node mcp/server.js"
+  },
+  "dependencies": {
+    "three": "^0.168.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "lucide": "^0.468.0",
+    "playwright": "^1.61.1",
+    "vite": "^8.1.5",
+    "zod": "^3.25.76"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules
+dist
+treegen-out
+graphify-out
+.DS_Store
+*.local
