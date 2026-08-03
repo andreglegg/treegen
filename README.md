@@ -43,13 +43,17 @@ Six presets (`meadow`, `orchard`, `pine`, `oak`, `acacia`, `willow`) and five
 species silhouettes (`round`, `oak`, `acacia`, `willow`, `pine`). Everything is
 bounded — see `paramShape` in `mcp/server.js` for ranges.
 
-`detail` drives the triangle budget:
+`detail` drives the triangle budget, at the generator's default foliage density:
 
 | detail | triangles | intent |
 |---|---|---|
 | 0 | ~1k | low-poly |
 | 1 | ~3k | game-ready |
 | 2 | ~7k | hero |
+
+`leafDensity` moves those numbers a lot — each foliage cluster is its own mesh,
+so the oak preset (density 46) roughly doubles the detail-1 count. Read
+`meshStats()` rather than assuming.
 
 ## Consumers
 
