@@ -45,9 +45,11 @@ export const presets = {
   // stem; ancients go squat (H/D ~15) with a retrenched crown wider than
   // tall; giants keep a near-columnar shaft, a high bare trunk, buttress
   // flanges, and few but huge foliage masses.
-  sapling: { species: 'round', seed: 2451, age: 0.1, height: 3.4, trunkRadius: 0.19, branchCount: 6, branchSpread: 0.8, canopySize: 1.25, leafDensity: 12, leafShape: 0.7, leafStyle: 'clustered', leafSize: 0.9, leafVariation: 0.45, detail: 1, lean: 0.1, leafPalette: 1, barkPalette: 0 },
-  ancient: { species: 'oak', seed: 9218, age: 1, height: 8.5, trunkRadius: 1.15, branchCount: 13, branchSpread: 1.8, canopySize: 3.4, leafDensity: 48, leafShape: 0.45, leafStyle: 'angular', leafSize: 1.05, leafVariation: 0.7, detail: 1, lean: 0.16, leafPalette: 5, barkPalette: 2 },
-  giant: { species: 'pine', seed: 5107, age: 0.85, height: 42, trunkRadius: 1.9, branchCount: 14, branchSpread: 1.2, canopySize: 7, leafDensity: 36, leafShape: 0.7, leafStyle: 'needles', leafSize: 1.1, leafVariation: 0.45, detail: 1, lean: 0.03, leafPalette: 1, barkPalette: 4 },
+  // Sliders state the FULL-GROWN size; age plays the tree back along its
+  // growth curve. The sapling is literally a young meadow-class tree.
+  sapling: { species: 'round', seed: 2451, age: 0.08, height: 6.5, trunkRadius: 0.34, branchCount: 6, branchSpread: 0.8, canopySize: 2.0, leafDensity: 18, leafShape: 0.7, leafStyle: 'clustered', leafSize: 0.9, leafVariation: 0.45, detail: 1, lean: 0.1, leafPalette: 1, barkPalette: 0 },
+  ancient: { species: 'oak', seed: 9218, age: 1, height: 8.5, trunkRadius: 0.72, branchCount: 13, branchSpread: 1.8, canopySize: 3.4, leafDensity: 48, leafShape: 0.45, leafStyle: 'angular', leafSize: 1.05, leafVariation: 0.7, detail: 1, lean: 0.16, leafPalette: 5, barkPalette: 2 },
+  giant: { species: 'pine', seed: 5107, age: 0.85, height: 42, trunkRadius: 1.25, branchCount: 14, branchSpread: 1.2, canopySize: 7, leafDensity: 36, leafShape: 0.7, leafStyle: 'needles', leafSize: 1.1, leafVariation: 0.45, detail: 1, lean: 0.03, leafPalette: 1, barkPalette: 4 },
 };
 
 export const defaultParams = { ...presets.meadow, age: 0.5 };

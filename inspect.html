@@ -151,6 +151,13 @@
         let radius;
         if (view.focus) {
           ({ target, radius } = focusPoint(group, view.focus));
+        } else if (view.frameParams) {
+          // Frame as if the tree were view.frameParams — for growth sequences,
+          // where auto-fit would hide the size change between stages.
+          const ref = buildTree(view.frameParams);
+          const sphere = new THREE.Box3().setFromObject(ref).getBoundingSphere(new THREE.Sphere());
+          target = sphere.center;
+          radius = sphere.radius;
         } else {
           const box = new THREE.Box3().setFromObject(group);
           const sphere = box.getBoundingSphere(new THREE.Sphere());

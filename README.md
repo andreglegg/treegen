@@ -44,10 +44,13 @@ Nine presets (`meadow`, `orchard`, `pine`, `oak`, `acacia`, `willow`,
 `acacia`, `willow`, `pine`). Everything is bounded — see `paramShape` in
 `mcp/server.js` for ranges.
 
-`age` (0–1) drives morphology through curves fitted from tree-allometry
-research: 0 is a slender upswept sapling too young to fork, 0.5 reproduces the
-mature look, 1 is a squat veteran with heavy flare, gnarl, drooping limbs, and
-a retrenched crown wider than tall. `height` runs 2–50m; above ~15m the trunk
+`age` (0–1) plays the tree's whole life: `height`/`trunkRadius` state the
+FULL-GROWN size and age moves the tree along its growth curve — a knee-high
+sapling shoots up through youth, height saturates by mid-life (0.5 = exactly
+the sliders), and girth keeps thickening into a squat veteran with heavy
+flare, gnarl, drooping limbs, root spurs, and a retrenched crown wider than
+tall. The curves come from tree-allometry research; dragging the slider looks
+like the tree growing. `height` runs 2–50m; above ~15m the trunk
 blends toward giant proportions — near-columnar shaft, stronger basal flare,
 and plank buttress flanges (a star cross-section that rounds out partway up),
 the cues that make a big tree read as *giant* instead of "small tree,

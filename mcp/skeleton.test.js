@@ -141,6 +141,17 @@ test('the trunk stays visible at every height', () => {
   }
 });
 
+test('age grows the tree: height rises to mid-life, girth keeps thickening', () => {
+  const top = (age) => {
+    const spine = buildSkeleton({ ...defaultParams, age }).spine;
+    return spine[spine.length - 1].p.y;
+  };
+  const baseR = (age) => buildSkeleton({ ...defaultParams, age }).spine[0].r;
+  assert.ok(top(0) < top(0.25) && top(0.25) < top(0.5), 'height should rise through youth');
+  assert.ok(top(0) < top(0.5) * 0.45, 'a newborn sapling should be a fraction of mature height');
+  assert.ok(baseR(1) > baseR(0.5) * 1.4, 'girth should keep thickening after height stalls');
+});
+
 test('age produces the allometry it claims', () => {
   const measure = (age) => {
     const skel = buildSkeleton({ ...defaultParams, species: 'oak', age });

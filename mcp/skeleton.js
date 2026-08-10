@@ -126,13 +126,30 @@ function crownDirections(count, rand, lowest = -0.5) {
  */
 function ageFactors(s) {
   const age = clamp(Number(s.age ?? 0.5), 0, 1);
-  // Trees taller than ~15m blend toward giant proportions: near-columnar
-  // shaft with a distinct basal flare zone — scaled-up cone taper is what
-  // makes a big tree read as "small tree, enlarged".
-  const giant = clamp((Number(s.height) - 15) / 25, 0, 1);
+
+  // GROWTH: height/trunkRadius sliders define the FULL-GROWN tree; age moves
+  // the tree along its growth curve so dragging the slider plays out a life —
+  // sapling shooting up, girth thickening for the whole span. Height
+  // saturates by mid-life (age 0.5 = exactly the sliders, so mature presets
+  // are unchanged) and even shrinks a touch in old age (crown retrenchment);
+  // girth keeps growing, which produces the squat ancient look by itself.
+  const rise = clamp(age / 0.5, 0, 1);
+  const smooth = rise * rise * (3 - 2 * rise);
+  const heightGrowth = age < 0.5 ? lerp(0.2, 1, smooth) : 1 - (age - 0.5) * 0.08;
+  const girthGrowth = age < 0.5 ? lerp(0.26, 1, rise) : 1 + (age - 0.5) * 1.7;
+  // Young trees carry fewer foliage masses, not just smaller ones.
+  const leafGrowth = lerp(0.35, 1, clamp(age / 0.45, 0, 1));
+
+  // Trees taller than ~15m GROWN height blend toward giant proportions:
+  // near-columnar shaft with a distinct basal flare zone — scaled-up cone
+  // taper is what makes a big tree read as "small tree, enlarged".
+  const giant = clamp((Number(s.height) * heightGrowth - 15) / 25, 0, 1);
   return {
     age,
     giant,
+    heightGrowth,
+    girthGrowth,
+    leafGrowth,
     flare: (1 + (age - 0.5) * 0.9) * (1 + giant * 0.6),
     wobble: lerp(0.4, 1.9, age) * (1 - giant * 0.5),
     taperPower: lerp(1.0, 0.7, age) * (1 - giant * 0.6),
@@ -242,10 +259,16 @@ function curveBranch(start, end, bow, droop, samples) {
  * the tip of some branch in `branches`.
  */
 export function buildSkeleton(params) {
-  const s = params;
+  const fx = ageFactors(params);
+  // Everything downstream sees the GROWN dimensions, so crown clamps, blob
+  // sizing, branch reach and giant blending all scale with the life stage.
+  const s = {
+    ...params,
+    height: Number(params.height) * fx.heightGrowth,
+    trunkRadius: Number(params.trunkRadius) * fx.girthGrowth,
+  };
   const rand = rng(Number(s.seed));
   const baseProfile = SPECIES_PROFILES[s.species] ?? SPECIES_PROFILES.round;
-  const fx = ageFactors(s);
 
   // Age reshapes the species profile: droop grows, the crown sinks and
   // flattens, and saplings are too young to have forked into leaders at all.
@@ -279,7 +302,7 @@ export function buildSkeleton(params) {
   const branches = [];
   const anchors = [];
   const maxDepth = 2 + Number(s.detail);
-  const leafCount = Math.max(1, Math.round(Number(s.leafDensity)));
+  const leafCount = Math.max(1, Math.round(Number(s.leafDensity) * fx.leafGrowth));
 
   if (s.species === 'pine') {
     buildConifer({ s, rand, spine, profile, branches, anchors, crownCentre });

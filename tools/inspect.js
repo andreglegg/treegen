@@ -92,6 +92,19 @@ function sheetSpecs(presets) {
       ],
     },
     {
+      file: 'growth.png',
+      title: 'Growth sequence',
+      subtitle: 'one tree, one camera — the age slider plays its whole life, sapling to veteran',
+      cols: 6,
+      cellW: 300,
+      cellH: 380,
+      cells: ['meadow', 'oak'].flatMap((p) =>
+        [0, 0.15, 0.3, 0.5, 0.75, 1].map((age) =>
+          cell(`${p} · age ${age}`, { ...presets[p], age }, { view: { frameParams: { ...presets[p], age: 1 } } })
+        )
+      ),
+    },
+    {
       file: 'canopy.png',
       title: 'Branch web under the canopy',
       subtitle: 'inside the crown where stump joints and floating limbs show — margin <1 zooms past the fitted distance',
