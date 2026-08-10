@@ -1,8 +1,18 @@
-// Headless tree generator — a DOM/WebGL-free port of the geometry math in
-// ../src/main.js. Given a params object it returns a THREE.Group of named
-// meshes with plain MeshStandardMaterials, ready for GLTF/OBJ export in Node.
+// Headless tree generator. Turns the structural skeleton (see skeleton.js)
+// into a THREE.Group of named meshes with plain MeshStandardMaterials, ready
+// for GLTF/OBJ export in Node or for re-materialising in the browser app.
+//
+// Public API — buildTree, meshStats, presets, defaultParams, randomParams, rng,
+// leafPalettes, barkPalettes — is unchanged from earlier versions, as are the
+// mesh names, so downstream importers keep working.
 import * as THREE from 'three';
+import { buildSkeleton, rng } from './skeleton.js';
 
+export { rng };
+export { buildSkeleton, SPECIES_PROFILES } from './skeleton.js';
+
+// Three tones per palette: base, shadow, highlight. They are assigned by where
+// a leaf mass sits relative to the sun, not by index, so they read as lighting.
 export const leafPalettes = [
   ['#7faa52', '#4f7f43', '#d7b447'],
   ['#5f9d65', '#2f6e4f', '#9dc967'],
@@ -24,26 +34,15 @@ export const barkPalettes = [
 ];
 
 export const presets = {
-  meadow: { species: 'round', seed: 4192, height: 6.2, trunkRadius: 0.45, branchCount: 11, branchSpread: 1.25, canopySize: 2.35, leafDensity: 34, leafShape: 0.66, leafStyle: 'clustered', leafSize: 1, leafVariation: 0.55, detail: 1, lean: 0.18, leafPalette: 0, barkPalette: 1 },
-  orchard: { species: 'round', seed: 1327, height: 4.9, trunkRadius: 0.38, branchCount: 8, branchSpread: 1.65, canopySize: 2.65, leafDensity: 42, leafShape: 0.35, leafStyle: 'rounded', leafSize: 1.1, leafVariation: 0.4, detail: 0, lean: 0.08, leafPalette: 2, barkPalette: 0 },
-  pine: { species: 'pine', seed: 7714, height: 7.8, trunkRadius: 0.34, branchCount: 12, branchSpread: 0.88, canopySize: 2.15, leafDensity: 28, leafShape: 0.8, leafStyle: 'needles', leafSize: 1, leafVariation: 0.6, detail: 1, lean: 0.12, leafPalette: 1, barkPalette: 4 },
-  oak: { species: 'oak', seed: 3048, height: 6.7, trunkRadius: 0.6, branchCount: 15, branchSpread: 1.75, canopySize: 2.8, leafDensity: 46, leafShape: 0.4, leafStyle: 'angular', leafSize: 0.92, leafVariation: 0.72, detail: 1, lean: 0.1, leafPalette: 5, barkPalette: 4 },
-  acacia: { species: 'acacia', seed: 6291, height: 6.8, trunkRadius: 0.42, branchCount: 10, branchSpread: 2.05, canopySize: 3.05, leafDensity: 38, leafShape: 0.24, leafStyle: 'flat', leafSize: 1.2, leafVariation: 0.5, detail: 1, lean: 0.24, leafPalette: 6, barkPalette: 2 },
-  willow: { species: 'willow', seed: 8174, height: 6.1, trunkRadius: 0.4, branchCount: 12, branchSpread: 1.8, canopySize: 2.55, leafDensity: 52, leafShape: 0.8, leafStyle: 'flat', leafSize: 0.85, leafVariation: 0.65, detail: 1, lean: 0.16, leafPalette: 1, barkPalette: 5 },
+  meadow: { species: 'round', seed: 4192, height: 6.2, trunkRadius: 0.42, branchCount: 9, branchSpread: 1.15, canopySize: 2.3, leafDensity: 30, leafShape: 0.66, leafStyle: 'clustered', leafSize: 1, leafVariation: 0.5, detail: 1, lean: 0.14, leafPalette: 0, barkPalette: 1 },
+  orchard: { species: 'round', seed: 1327, height: 4.6, trunkRadius: 0.34, branchCount: 7, branchSpread: 1.3, canopySize: 2.1, leafDensity: 34, leafShape: 0.5, leafStyle: 'rounded', leafSize: 1.05, leafVariation: 0.4, detail: 0, lean: 0.08, leafPalette: 2, barkPalette: 0 },
+  pine: { species: 'pine', seed: 7714, height: 7.8, trunkRadius: 0.32, branchCount: 12, branchSpread: 1.0, canopySize: 2.0, leafDensity: 34, leafShape: 0.8, leafStyle: 'needles', leafSize: 1, leafVariation: 0.5, detail: 1, lean: 0.06, leafPalette: 1, barkPalette: 4 },
+  oak: { species: 'oak', seed: 3048, height: 6.4, trunkRadius: 0.58, branchCount: 11, branchSpread: 1.5, canopySize: 2.5, leafDensity: 38, leafShape: 0.42, leafStyle: 'angular', leafSize: 1.0, leafVariation: 0.6, detail: 1, lean: 0.1, leafPalette: 5, barkPalette: 4 },
+  acacia: { species: 'acacia', seed: 6291, height: 7.0, trunkRadius: 0.4, branchCount: 8, branchSpread: 1.7, canopySize: 2.6, leafDensity: 30, leafShape: 0.3, leafStyle: 'clustered', leafSize: 1.15, leafVariation: 0.45, detail: 1, lean: 0.2, leafPalette: 6, barkPalette: 2 },
+  willow: { species: 'willow', seed: 8174, height: 6.6, trunkRadius: 0.4, branchCount: 10, branchSpread: 1.35, canopySize: 2.2, leafDensity: 34, leafShape: 0.75, leafStyle: 'clustered', leafSize: 0.9, leafVariation: 0.6, detail: 1, lean: 0.12, leafPalette: 1, barkPalette: 5 },
 };
 
 export const defaultParams = { ...presets.meadow };
-
-// Deterministic Lehmer RNG — identical to the browser app so a seed reproduces
-// the same tree in either place.
-export function rng(seed) {
-  let value = Number(seed) % 2147483647;
-  if (value <= 0) value += 2147483646;
-  return () => {
-    value = (value * 16807) % 2147483647;
-    return (value - 1) / 2147483646;
-  };
-}
 
 export function randomParams(seed) {
   const rand = rng(seed);
@@ -67,147 +66,234 @@ function material(name, color) {
   return mat;
 }
 
-function addTrunkSegment(parent, start, end, r0, r1, mat, sides) {
-  const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
-  const length = start.distanceTo(end);
-  const geom = new THREE.CylinderGeometry(r1, r0, length, sides, 1, false);
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.name = 'trunk_segment';
-  mesh.position.copy(mid);
-  mesh.quaternion.setFromUnitVectors(
-    new THREE.Vector3(0, 1, 0),
-    new THREE.Vector3().subVectors(end, start).normalize()
-  );
-  parent.add(mesh);
-  return mesh;
-}
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-function addLeafBlob(parent, s, position, scale, mat, rand, index) {
-  const detail = Math.max(0, Math.min(2, s.detail));
-  const geometryByStyle = {
-    clustered: () => new THREE.IcosahedronGeometry(1, detail),
-    angular: () => new THREE.DodecahedronGeometry(1, detail),
-    rounded: () => new THREE.SphereGeometry(1, 8 + detail * 4, 5 + detail * 2),
-    flat: () => new THREE.IcosahedronGeometry(1, Math.max(0, detail - 1)),
-    needles: () => new THREE.ConeGeometry(1, 1.7, 5 + detail * 2, 1),
-  };
-  const geom = (geometryByStyle[s.leafStyle] ?? geometryByStyle.clustered)();
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.name = `leaf_cluster_${index}`;
-  mesh.position.copy(position);
-  mesh.scale.set(scale.x, s.leafStyle === 'flat' ? scale.y * 0.32 : scale.y, scale.z);
-  mesh.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
-  parent.add(mesh);
-}
-
-function addPineLayer(parent, y, radius, height, mat, sides, rand, index) {
-  const geom = new THREE.ConeGeometry(radius, height, sides, 1, false);
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.name = `pine_bough_layer_${index}`;
-  mesh.position.set((rand() - 0.5) * 0.16, y, (rand() - 0.5) * 0.16);
-  mesh.rotation.y = rand() * Math.PI;
-  mesh.scale.x = 1 + (rand() - 0.5) * 0.18;
-  mesh.scale.z = 1 + (rand() - 0.5) * 0.18;
-  parent.add(mesh);
-}
-
-function buildBroadleaf(root, s, rand, sides, leafMats, barkMat) {
-  const profiles = {
-    round: { canopyY: 0.86, width: 1, vertical: 0.9, branchBase: 0.43, branchRange: 0.42, rise: 0.55 },
-    oak: { canopyY: 0.76, width: 1.25, vertical: 0.72, branchBase: 0.34, branchRange: 0.43, rise: 0.28 },
-    acacia: { canopyY: 0.83, width: 1.42, vertical: 0.33, branchBase: 0.55, branchRange: 0.24, rise: 0.12 },
-    willow: { canopyY: 0.76, width: 1.12, vertical: 1.15, branchBase: 0.4, branchRange: 0.32, rise: -0.12 },
-  };
-  const profile = profiles[s.species] ?? profiles.round;
-  const canopyCenter = new THREE.Vector3(s.lean * 1.25, s.height * profile.canopyY, 0);
-  const branches = Number(s.branchCount);
-  for (let i = 0; i < branches; i += 1) {
-    const t = branches === 1 ? 0 : i / (branches - 1);
-    const angle = t * Math.PI * 2 + rand() * 0.4;
-    const y = s.height * (profile.branchBase + rand() * profile.branchRange);
-    const len = s.branchSpread * profile.width * (1.05 + rand() * 0.8);
-    const start = new THREE.Vector3(s.lean * (y / s.height), y, 0);
-    const rise = profile.rise + rand() * (s.species === 'willow' ? 0.3 : 0.8);
-    const end = start.clone().add(new THREE.Vector3(Math.cos(angle) * len, rise, Math.sin(angle) * len));
-    addTrunkSegment(root, start, end, s.trunkRadius * 0.2, s.trunkRadius * 0.06, barkMat, sides);
+/**
+ * Sweep a ring along a poly-line to produce one continuous tapered tube.
+ *
+ * Frames are carried along the curve by parallel transport — each ring is the
+ * previous one rotated by the change in tangent — so the tube never twists,
+ * and the trunk becomes a single smooth piece instead of stacked cylinders
+ * with visible seams at every joint.
+ */
+function tubeGeometry(points, radii, sides, caps = true) {
+  const n = points.length;
+  const tangents = [];
+  for (let i = 0; i < n; i += 1) {
+    const a = points[Math.max(0, i - 1)];
+    const b = points[Math.min(n - 1, i + 1)];
+    const t = new THREE.Vector3().subVectors(b, a);
+    tangents.push(t.lengthSq() < 1e-12 ? new THREE.Vector3(0, 1, 0) : t.normalize());
   }
 
-  const count = Number(s.leafDensity);
-  for (let i = 0; i < count; i += 1) {
-    const angle = rand() * Math.PI * 2;
-    const radius = Math.sqrt(rand()) * s.canopySize * profile.width;
-    const vertical = (rand() - 0.42) * s.canopySize * profile.vertical;
-    const position = canopyCenter.clone().add(new THREE.Vector3(Math.cos(angle) * radius, vertical, Math.sin(angle) * radius * 0.92));
-    if (s.species === 'willow') position.y -= Math.max(0, radius - s.canopySize * 0.45) * 0.45;
-    const variation = Number(s.leafVariation);
-    const lump = (0.48 + rand() * 0.36 * variation) * Number(s.leafSize);
-    const roundness = Number(s.leafShape);
-    const scale = new THREE.Vector3(
-      lump * (1.25 - roundness * 0.28),
-      lump * (0.55 + roundness * 0.8) * (0.9 + rand() * variation * 0.25),
-      lump * (1.15 - roundness * 0.18)
-    );
-    addLeafBlob(root, s, position, scale, leafMats[i % leafMats.length], rand, i + 1);
+  // Any vector not parallel to the first tangent will do as a seed.
+  const seed = Math.abs(tangents[0].y) > 0.92 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+  let normal = new THREE.Vector3().crossVectors(tangents[0], seed).normalize();
+
+  const position = [];
+  const normalAttr = [];
+  const uv = [];
+  const index = [];
+
+  for (let i = 0; i < n; i += 1) {
+    if (i > 0) {
+      normal.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(tangents[i - 1], tangents[i]));
+      // Re-orthogonalise against drift from accumulated rotations.
+      normal.addScaledVector(tangents[i], -normal.dot(tangents[i]));
+      if (normal.lengthSq() < 1e-12) normal.crossVectors(tangents[i], seed);
+      normal.normalize();
+    }
+    const binormal = new THREE.Vector3().crossVectors(tangents[i], normal).normalize();
+    for (let j = 0; j < sides; j += 1) {
+      const a = (j / sides) * Math.PI * 2;
+      const dir = normal.clone().multiplyScalar(Math.cos(a)).addScaledVector(binormal, Math.sin(a));
+      position.push(
+        points[i].x + dir.x * radii[i],
+        points[i].y + dir.y * radii[i],
+        points[i].z + dir.z * radii[i]
+      );
+      normalAttr.push(dir.x, dir.y, dir.z);
+      uv.push(j / sides, i / (n - 1));
+    }
+  }
+
+  for (let i = 0; i < n - 1; i += 1) {
+    for (let j = 0; j < sides; j += 1) {
+      const j2 = (j + 1) % sides;
+      const a = i * sides + j;
+      const b = i * sides + j2;
+      const c = (i + 1) * sides + j;
+      const d = (i + 1) * sides + j2;
+      index.push(a, b, c, b, d, c);
+    }
+  }
+
+  // Flat caps close the tube for export. Branches skip them: both ends are
+  // buried, in the parent limb below and in a leaf mass above.
+  if (caps) {
+    const last = n - 1;
+    const capStart = position.length / 3;
+    position.push(points[0].x, points[0].y, points[0].z);
+    normalAttr.push(-tangents[0].x, -tangents[0].y, -tangents[0].z);
+    uv.push(0.5, 0);
+    const capEnd = position.length / 3;
+    position.push(points[last].x, points[last].y, points[last].z);
+    normalAttr.push(tangents[last].x, tangents[last].y, tangents[last].z);
+    uv.push(0.5, 1);
+
+    for (let j = 0; j < sides; j += 1) {
+      const j2 = (j + 1) % sides;
+      index.push(capStart, j2, j);
+      index.push(capEnd, last * sides + j, last * sides + j2);
+    }
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  geom.setAttribute('normal', new THREE.Float32BufferAttribute(normalAttr, 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geom.setIndex(index);
+  return geom;
+}
+
+function leafGeometry(style, detail) {
+  const d = clamp(detail, 0, 2);
+  switch (style) {
+    case 'angular':
+      return new THREE.DodecahedronGeometry(1, Math.max(0, d - 1));
+    case 'rounded':
+      return new THREE.SphereGeometry(1, 6 + d * 3, 4 + d * 2);
+    case 'flat':
+      return new THREE.IcosahedronGeometry(1, Math.max(0, d - 1));
+    case 'needles':
+      return new THREE.ConeGeometry(1, 1.8, 5 + d * 2, 1);
+    case 'clustered':
+    default:
+      return new THREE.IcosahedronGeometry(1, d);
   }
 }
 
-function buildPine(root, s, rand, sides, leafMats, barkMat) {
-  const layers = Math.max(6, Math.round(s.leafDensity / 3));
-  for (let i = 0; i < Number(s.branchCount); i += 1) {
-    const y = s.height * (0.22 + rand() * 0.62);
-    const angle = rand() * Math.PI * 2;
-    const len = s.branchSpread * (1.25 - y / s.height) * 1.9;
-    const start = new THREE.Vector3(s.lean * (y / s.height), y, 0);
-    const end = start.clone().add(new THREE.Vector3(Math.cos(angle) * len, -0.14 + rand() * 0.28, Math.sin(angle) * len));
-    addTrunkSegment(root, start, end, s.trunkRadius * 0.14, s.trunkRadius * 0.035, barkMat, sides);
+/**
+ * Leaf masses that are completely swallowed by a neighbour contribute nothing
+ * but triangles. Cheap O(n^2) containment test; n is at most 64.
+ */
+function cullEnclosed(anchors) {
+  const keep = new Array(anchors.length).fill(true);
+  for (let i = 0; i < anchors.length; i += 1) {
+    for (let j = 0; j < anchors.length; j += 1) {
+      if (i === j || !keep[i] || !keep[j]) continue;
+      if (anchors[j].radius <= anchors[i].radius) continue;
+      if (anchors[i].p.distanceTo(anchors[j].p) + anchors[i].radius <= anchors[j].radius * 0.96) {
+        keep[i] = false;
+      }
+    }
   }
-  for (let i = 0; i < layers; i += 1) {
-    const t = i / Math.max(1, layers - 1);
-    const y = s.height * (0.28 + t * 0.68);
-    const variation = 1 + (rand() - 0.5) * Number(s.leafVariation) * 0.26;
-    const radius = s.canopySize * (1.08 - t * 0.86) * s.branchSpread * Number(s.leafSize) * variation;
-    const h = s.height * (0.2 - t * 0.08) * (0.75 + s.leafShape * 0.55);
-    addPineLayer(root, y, radius, h, leafMats[i % leafMats.length], sides + 2, rand, i + 1);
-  }
+  return anchors.filter((_, i) => keep[i]);
 }
 
-// Build and return a THREE.Group for the given params (merged over defaults).
+/** Build and return a THREE.Group for the given params (merged over defaults). */
 export function buildTree(params = {}) {
   const s = { ...defaultParams, ...params };
+  const skel = buildSkeleton(s);
   const root = new THREE.Group();
   root.name = 'Treegen_asset';
 
-  const rand = rng(Number(s.seed));
-  const sides = [6, 8, 12][Number(s.detail)] ?? 8;
+  const detail = clamp(Number(s.detail), 0, 2);
+  const trunkSides = [5, 7, 10][detail];
   const [barkBase, barkDark] = barkPalettes[s.barkPalette] ?? barkPalettes[0];
   const [leafBase, leafDark, leafLight] = leafPalettes[s.leafPalette] ?? leafPalettes[0];
+
   const barkMat = material('bark_toon', barkBase);
   const barkAltMat = material('bark_shadow', barkDark);
-  const leafMats = [
-    material('leaves_base', leafBase),
-    material('leaves_shadow', leafDark),
-    material('leaves_highlight', leafLight),
-  ];
+  const leafMats = {
+    base: material('leaves_base', leafBase),
+    shadow: material('leaves_shadow', leafDark),
+    highlight: material('leaves_highlight', leafLight),
+  };
 
-  const top = new THREE.Vector3(s.lean, s.height, s.lean * 0.45);
-  addTrunkSegment(root, new THREE.Vector3(0, 0, 0), top, s.trunkRadius, s.trunkRadius * 0.34, barkMat, sides);
-  addTrunkSegment(
-    root,
-    new THREE.Vector3(0.05, s.height * 0.08, -0.04),
-    new THREE.Vector3(-0.03, s.height * 0.86, 0.03),
-    s.trunkRadius * 0.58,
-    s.trunkRadius * 0.18,
-    barkAltMat,
-    sides
+  // Trunk — one continuous swept tube from flared root to tip.
+  const trunk = new THREE.Mesh(
+    tubeGeometry(skel.spine.map((p) => p.p), skel.spine.map((p) => p.r), trunkSides),
+    barkMat
   );
+  trunk.name = 'trunk_segment';
+  root.add(trunk);
 
-  if (s.species === 'pine') buildPine(root, s, rand, sides, leafMats, barkMat);
-  else buildBroadleaf(root, s, rand, sides, leafMats, barkMat);
+  // Branches. Twigs get fewer sides, and any branch entirely hidden inside its
+  // own leaf mass is skipped outright.
+  let branchIndex = 0;
+  for (const branch of skel.branches) {
+    if (branch.leafRadius) {
+      const p = branch.points;
+      const length = p[0].distanceTo(p[p.length - 1]);
+      if (length < branch.leafRadius * 0.85) continue;
+    }
+    const sides = Math.max(3, trunkSides - 2 - branch.depth * 2);
+    const radii = branch.points.map((_, i) => {
+      const u = i / (branch.points.length - 1);
+      return Math.max(0.01, branch.radius + (branch.endRadius - branch.radius) * u);
+    });
+    const mesh = new THREE.Mesh(
+      tubeGeometry(branch.points, radii, sides, false),
+      branch.depth >= 2 ? barkAltMat : barkMat
+    );
+    mesh.name = `branch_segment_${branchIndex}`;
+    branchIndex += 1;
+    root.add(mesh);
+  }
+
+  // Foliage. One geometry instance shared by every mass of the same style;
+  // per-mass differences ride on the mesh transform.
+  const anchors = cullEnclosed(skel.anchors);
+
+  // Assign the three leaf tones by rank, not by an absolute threshold. A fixed
+  // cutoff floods whichever species happens to sit high in the light; ranking
+  // keeps the base tone dominant and the accents readable as highlight and
+  // shade on every species and at every parameter setting.
+  const ranked = [...anchors].sort((a, b) => a.exposure - b.exposure);
+  const at = (frac) => ranked[clamp(Math.floor(ranked.length * frac), 0, ranked.length - 1)]?.exposure;
+  const shadowCut = ranked.length > 3 ? at(0.26) : -Infinity;
+  const highlightCut = ranked.length > 3 ? at(0.84) : Infinity;
+  const toneFor = (exposure) =>
+    exposure >= highlightCut ? leafMats.highlight : exposure <= shadowCut ? leafMats.shadow : leafMats.base;
+
+  const blob = leafGeometry(s.leafStyle, detail);
+  const skirt = skel.anchors.some((a) => a.skirt)
+    ? new THREE.ConeGeometry(1, 1, trunkSides + 2, 1)
+    : null;
+
+  const roundness = Number(s.leafShape);
+  const wide = 1.25 - roundness * 0.3;
+  const tall = 0.6 + roundness * 0.7;
+
+  anchors.forEach((anchor, i) => {
+    if (anchor.skirt) {
+      const mesh = new THREE.Mesh(skirt, toneFor(anchor.exposure));
+      mesh.name = `pine_bough_layer_${i}`;
+      mesh.position.copy(anchor.p);
+      mesh.scale.set(anchor.radius, anchor.height, anchor.radius);
+      mesh.rotation.y = anchor.spin;
+      root.add(mesh);
+      return;
+    }
+
+    const mesh = new THREE.Mesh(blob, toneFor(anchor.exposure));
+    mesh.name = `leaf_cluster_${i}`;
+    mesh.position.copy(anchor.p);
+    const flat = s.leafStyle === 'flat' ? 0.34 : 1;
+    mesh.scale.set(
+      anchor.radius * wide,
+      anchor.radius * tall * anchor.aspect * flat,
+      anchor.radius * wide * 0.94
+    );
+    mesh.rotation.set(anchor.tilt, anchor.spin, anchor.tilt * 0.6);
+    root.add(mesh);
+  });
 
   return root;
 }
 
-// Count meshes/triangles for reporting, matching the app's viewport metrics.
+/** Count meshes/triangles for reporting, matching the app's viewport metrics. */
 export function meshStats(group) {
   let meshes = 0;
   let triangles = 0;

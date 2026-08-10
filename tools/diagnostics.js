@@ -7,16 +7,29 @@ import * as THREE from 'three';
 const BARK = /trunk|branch_segment/;
 const FOLIAGE = /leaf_cluster|pine_bough|foliage/;
 
-// A cylinder mesh's axis, in world space. CylinderGeometry keeps its height in
-// .parameters, which is the only way back to the endpoints after the mesh has
-// been positioned and rotated.
+// A bark mesh's axis, in world space, derived from the geometry itself: the
+// longest side of the local bounding box is the length, the shortest is the
+// girth. Works for both a plain cylinder and a swept tube, so old and new
+// generators are measured the same way.
 function segmentOf(mesh) {
-  const h = mesh.geometry.parameters?.height;
-  if (h == null) return null;
-  const half = new THREE.Vector3(0, (h * mesh.scale.y) / 2, 0).applyQuaternion(mesh.getWorldQuaternion(new THREE.Quaternion()));
-  const mid = mesh.getWorldPosition(new THREE.Vector3());
-  const r = mesh.geometry.parameters.radiusTop ?? 0;
-  return { a: mid.clone().sub(half), b: mid.clone().add(half), radius: r };
+  const geom = mesh.geometry;
+  geom.computeBoundingBox();
+  const size = geom.boundingBox.getSize(new THREE.Vector3());
+  const centre = geom.boundingBox.getCenter(new THREE.Vector3());
+
+  const longest = Math.max(size.x, size.y, size.z);
+  if (!(longest > 0)) return null;
+  const axis =
+    size.x === longest ? new THREE.Vector3(1, 0, 0)
+    : size.y === longest ? new THREE.Vector3(0, 1, 0)
+    : new THREE.Vector3(0, 0, 1);
+
+  const half = axis.multiplyScalar(longest / 2);
+  return {
+    a: centre.clone().sub(half).applyMatrix4(mesh.matrixWorld),
+    b: centre.clone().add(half).applyMatrix4(mesh.matrixWorld),
+    radius: Math.min(size.x, size.y, size.z) / 2,
+  };
 }
 
 // Foliage as a centre plus an effective radius, so "is this branch inside a
