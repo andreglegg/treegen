@@ -31,6 +31,9 @@ export const barkPalettes = [
   ['#b58254', '#7d5134'],
   ['#584434', '#31261d'],
   ['#73735e', '#48483d'],
+  // Weathered grey-brown — dead wood bleached by sun and rain (snag preset).
+  // Appended, never reordered: palette indices are part of the public API.
+  ['#8d8274', '#57504a'],
 ];
 
 export const presets = {
@@ -50,6 +53,10 @@ export const presets = {
   sapling: { species: 'round', seed: 2451, age: 0.08, height: 6.5, trunkRadius: 0.34, branchCount: 6, branchSpread: 0.8, canopySize: 2.0, leafDensity: 18, leafShape: 0.7, leafStyle: 'clustered', leafSize: 0.9, leafVariation: 0.45, detail: 1, lean: 0.1, leafPalette: 1, barkPalette: 0 },
   ancient: { species: 'oak', seed: 9218, age: 1, height: 8.5, trunkRadius: 0.72, branchCount: 13, branchSpread: 1.8, canopySize: 3.4, leafDensity: 48, leafShape: 0.45, leafStyle: 'angular', leafSize: 1.05, leafVariation: 0.7, detail: 1, lean: 0.16, leafPalette: 5, barkPalette: 2 },
   giant: { species: 'pine', seed: 5107, age: 0.85, height: 42, trunkRadius: 1.25, branchCount: 14, branchSpread: 1.2, canopySize: 7, leafDensity: 36, leafShape: 0.7, leafStyle: 'needles', leafSize: 1.1, leafVariation: 0.45, detail: 1, lean: 0.03, leafPalette: 1, barkPalette: 4 },
+  // Standing dead tree: bare (leafDensity 0 — winter mode), old, trunk snapped
+  // at ~70% with a jagged shear (brokenTop), grey weathered bark. Age 0.9 also
+  // earns it stag-head dead spikes, which suits a snag fine.
+  snag: { species: 'round', seed: 4788, age: 0.9, height: 9.2, trunkRadius: 0.33, branchCount: 8, branchSpread: 1.35, canopySize: 2.6, leafDensity: 0, leafShape: 0.5, leafStyle: 'clustered', leafSize: 1, leafVariation: 0.5, detail: 1, lean: 0.1, brokenTop: true, leafPalette: 0, barkPalette: 6 },
 };
 
 export const defaultParams = { ...presets.meadow, age: 0.5 };
@@ -359,6 +366,7 @@ export function buildTree(params = {}) {
   }
 
   let branchIndex = 0;
+  let deadIndex = 0;
   for (const head of skel.branches) {
     if (head.cont || head.trunkCont) continue; // absorbed into another path
     if (swallowed(head) && !contOf.has(head.id)) continue; // lone hidden twig
@@ -370,15 +378,20 @@ export function buildTree(params = {}) {
     // Leaders are trunk, structurally and visually — trunk resolution. Other
     // paths get sides by the depth they start at.
     const sides = head.leader ? trunkSides : Math.max(3, trunkSides - 2 - head.depth * 2);
+    // Stag-head deadwood gets its own name prefix so the diagnostics can tell
+    // deliberate dead spikes (which END in open air) from broken branches —
+    // and the shadow bark tone, because dead wood is darker than live bark.
+    const name = head.dead ? `dead_branch_${deadIndex}` : `branch_segment_${branchIndex}`;
     addBark(
-      `branch_segment_${branchIndex}`,
+      name,
       pts,
       radii,
       sides,
       'end',
-      head.depth >= 2 ? barkAltMat : barkMat
+      head.dead || head.depth >= 2 ? barkAltMat : barkMat
     );
-    branchIndex += 1;
+    if (head.dead) deadIndex += 1;
+    else branchIndex += 1;
   }
 
   // Foliage. One geometry instance shared by every mass of the same style;

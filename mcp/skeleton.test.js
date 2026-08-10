@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { buildSkeleton, SPECIES_PROFILES } from './skeleton.js';
-import { presets, defaultParams } from './generator.js';
+import { presets, defaultParams, buildTree } from './generator.js';
 
 const SPECIES = Object.keys(SPECIES_PROFILES);
 const make = (over = {}) => buildSkeleton({ ...defaultParams, ...over });
@@ -112,7 +112,7 @@ test('different seeds produce different trees', () => {
 test('survives every extreme the MCP schema permits', () => {
   const ranges = {
     age: [0, 1], height: [2, 50], trunkRadius: [0.15, 2.5], branchCount: [4, 18],
-    branchSpread: [0.45, 2.2], canopySize: [0.9, 8], leafDensity: [8, 64],
+    branchSpread: [0.45, 2.2], canopySize: [0.9, 8], leafDensity: [0, 64],
     leafShape: [0.15, 1], leafSize: [0.45, 1.7], leafVariation: [0, 1],
     lean: [0, 0.55], detail: [0, 2],
   };
@@ -123,7 +123,14 @@ test('survives every extreme the MCP schema permits', () => {
         for (const p of everyPoint(skel)) {
           assert.ok(Number.isFinite(p.x + p.y + p.z), `${species} ${key}=${value} produced NaN`);
         }
-        assert.ok(skel.anchors.length > 0, `${species} ${key}=${value} produced no foliage`);
+        // leafDensity 0 is bare/winter mode: zero foliage is the contract
+        // there, and the silhouette is carried by twigs instead.
+        if (key === 'leafDensity' && value === 0) {
+          assert.equal(skel.anchors.length, 0, `${species} bare tree still grew foliage`);
+          assert.ok(skel.branches.some((b) => b.twig), `${species} bare tree grew no twigs`);
+        } else {
+          assert.ok(skel.anchors.length > 0, `${species} ${key}=${value} produced no foliage`);
+        }
       }
     }
   }
@@ -186,6 +193,83 @@ test('giants get buttress flanges and columnar taper', () => {
 test('all presets build', () => {
   for (const [name, params] of Object.entries(presets)) {
     const skel = buildSkeleton({ ...defaultParams, ...params });
-    assert.ok(skel.anchors.length > 0, `${name} produced no foliage`);
+    // The snag is bare by design; every living preset must carry foliage.
+    if (name === 'snag') assert.equal(skel.anchors.length, 0, 'snag grew foliage');
+    else assert.ok(skel.anchors.length > 0, `${name} produced no foliage`);
   }
+});
+
+test('bare tree (leafDensity 0) has no anchors and one extra depth of twigs', () => {
+  for (const species of SPECIES) {
+    const skel = make({ species, leafDensity: 0 });
+    assert.equal(skel.anchors.length, 0, `${species} bare tree still has foliage`);
+    const twigs = skel.branches.filter((b) => b.twig);
+    assert.ok(twigs.length >= 2, `${species} bare tree grew no twigs`);
+    for (const twig of twigs) {
+      const parent = skel.branches[twig.parent];
+      assert.ok(parent, `${species} twig has no parent branch`);
+      // The extra depth: twigs recurse one level past the terminal they
+      // replace an anchor on, and start exactly at its tip.
+      assert.equal(twig.depth, parent.depth + 1, `${species} twig not one depth deeper`);
+      const tip = parent.points[parent.points.length - 1];
+      assert.ok(twig.points[0].distanceTo(tip) < 1e-6, `${species} twig floats off its parent tip`);
+    }
+  }
+  // A leafy tree of the same params must have no twigs at all.
+  assert.ok(!make({ leafDensity: 30 }).branches.some((b) => b.twig), 'leafy tree grew winter twigs');
+});
+
+test('snag preset: zero foliage and a jagged broken top', () => {
+  const params = { ...defaultParams, ...presets.snag };
+  const skel = buildSkeleton(params);
+  assert.equal(skel.anchors.length, 0, 'snag grew foliage');
+  // Trunk is trimmed at ~70% of its grown height…
+  const grownHeight = skel.params.height;
+  const top = skel.spine[skel.spine.length - 1].p.y;
+  assert.ok(top < grownHeight * 0.78, `snag trunk not broken (top at ${top.toFixed(2)} of ${grownHeight.toFixed(2)})`);
+  // …and the last ring stays blunt (~40% of the shear radius), not a point.
+  const lastR = skel.spine[skel.spine.length - 1].r;
+  const shearR = skel.spine[skel.spine.length - 2].r;
+  assert.ok(lastR > shearR * 0.3, `snag tip tapers to a point (${lastR} vs ${shearR})`);
+});
+
+test('ancient broadleaf grows stag-head dead spikes above the crown', () => {
+  const skel = make({ species: 'oak', age: 1 });
+  const dead = skel.branches.filter((b) => b.dead);
+  assert.ok(dead.length >= 2 && dead.length <= 4, `expected 2-4 dead spikes, got ${dead.length}`);
+  const crownTop = skel.crown.centre.y + skel.crown.ry;
+  for (const spike of dead) {
+    const tip = spike.points[spike.points.length - 1];
+    assert.ok(tip.y > crownTop, 'dead spike does not rise above the crown');
+    assert.ok(spike.endRadius < 0.02, 'dead spike does not taper to a point');
+    const parent = skel.branches[spike.parent];
+    assert.ok(parent, 'dead spike has no source limb');
+  }
+  // The meshes carry the dead_branch_N names the diagnostics exempt.
+  const group = buildTree({ ...defaultParams, species: 'oak', age: 1 });
+  let named = 0;
+  group.traverse((c) => { if (c.isMesh && /^dead_branch_\d+$/.test(c.name)) named += 1; });
+  assert.equal(named, dead.length, 'dead spikes not named dead_branch_N in the mesh');
+  // A merely mature tree has none.
+  assert.ok(!make({ species: 'oak', age: 0.5 }).branches.some((b) => b.dead), 'mature oak grew deadwood');
+});
+
+test('giant old broadleaf drops aerial roots to the ground', () => {
+  const skel = make({ species: 'oak', height: 30, age: 0.8, trunkRadius: 1.1, canopySize: 6 });
+  const roots = skel.branches.filter((b) => b.aerial);
+  assert.ok(roots.length >= 2 && roots.length <= 4, `expected 2-4 aerial roots, got ${roots.length}`);
+  for (const root of roots) {
+    const start = root.points[0];
+    const end = root.points[root.points.length - 1];
+    assert.ok(start.y > skel.params.height * 0.2, 'aerial root starts too low to be aerial');
+    assert.ok(end.y < 0.25, 'aerial root does not reach the ground');
+    // Thin tube: ~8% of the (grown) trunk radius.
+    assert.ok(root.radius < skel.params.trunkRadius * 0.12, 'aerial root too thick');
+    // Its top sits on a limb: the parent's centerline passes through it.
+    const limb = skel.branches[root.parent];
+    assert.ok(limb && limb.points.some((p) => p.distanceTo(start) < 1e-6), 'aerial root floats off its limb');
+  }
+  // Short or young trees get none.
+  assert.ok(!make({ species: 'oak', height: 10, age: 0.8 }).branches.some((b) => b.aerial), 'small oak grew aerial roots');
+  assert.ok(!make({ species: 'oak', height: 30, age: 0.4, trunkRadius: 1.1 }).branches.some((b) => b.aerial), 'young giant grew aerial roots');
 });

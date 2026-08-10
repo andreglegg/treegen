@@ -18,7 +18,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outArg = process.argv.find((a) => a.startsWith('--out='));
 const OUT = path.join(ROOT, 'inspect-out', outArg ? outArg.slice(6) : '');
 
-const PRESETS = ['meadow', 'orchard', 'pine', 'oak', 'acacia', 'willow', 'sapling', 'ancient', 'giant'];
+const PRESETS = ['meadow', 'orchard', 'pine', 'oak', 'acacia', 'willow', 'sapling', 'ancient', 'giant', 'snag'];
 const SEEDS = [4192, 1327, 3048];
 const SPECIES = ['round', 'oak', 'acacia', 'willow', 'pine'];
 const STYLES = ['clustered', 'angular', 'rounded', 'flat', 'needles'];
@@ -33,7 +33,8 @@ const RANGES = {
   branchCount: [4, 18],
   branchSpread: [0.45, 2.2],
   canopySize: [0.9, 8],
-  leafDensity: [8, 64],
+  leafDensity: [0, 64], // 0 = bare/winter tree
+
   leafShape: [0.15, 1],
   leafSize: [0.45, 1.7],
   leafVariation: [0, 1],
@@ -143,6 +144,31 @@ function sheetSpecs(presets) {
         ]),
         ...[0, 1, 2].map((d) => cell(`detail = ${d}`, { ...presets.meadow, detail: d })),
       ],
+    },
+    {
+      file: 'seasonal.png',
+      title: 'Seasonal & age features',
+      subtitle: 'winter bare mode, snag, stag-head deadwood, aerial roots — bare tips in air are the point here',
+      cols: 4,
+      cellW: 340,
+      cellH: 400,
+      cells: (() => {
+        const bare = (p) => ({ ...presets[p], leafDensity: 0 });
+        // A giant grown broadleaf that qualifies for aerial roots (the giant
+        // preset itself is a pine, which never grows them).
+        const giantOak = { ...presets.oak, height: 30, trunkRadius: 1.1, canopySize: 6, age: 0.8, leafDensity: 40 };
+        return [
+          ...['meadow', 'oak', 'willow', 'pine'].map((p) => cell(`bare ${p}`, bare(p))),
+          cell('bare oak · silhouette', bare('oak'), { mode: 'silhouette' }),
+          cell('snag · silhouette', presets.snag, { mode: 'silhouette' }),
+          cell('snag · top', presets.snag, { view: { focus: 'tip' } }),
+          cell('snag · 210°', presets.snag, { view: { azimuth: 210 } }),
+          cell('ancient · stag-head', presets.ancient, { mode: 'silhouette' }),
+          cell('giant oak · aerial roots', giantOak),
+          cell('giant oak · 140°', giantOak, { view: { azimuth: 140 } }),
+          cell('giant oak · silhouette', giantOak, { mode: 'silhouette' }),
+        ];
+      })(),
     },
     {
       file: 'styles.png',

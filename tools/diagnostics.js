@@ -4,7 +4,7 @@
 // actually exported.
 import * as THREE from 'three';
 
-const BARK = /trunk|branch_segment/;
+const BARK = /trunk|branch_segment|dead_branch/;
 const FOLIAGE = /leaf_cluster|pine_bough|foliage/;
 
 // A bark mesh's axis, in world space. The current generator stashes its exact
@@ -78,7 +78,14 @@ function collect(group) {
     if (FOLIAGE.test(child.name)) foliage.push(blobOf(child));
     else if (BARK.test(child.name)) {
       const seg = segmentOf(child);
-      if (seg) bark.push(seg);
+      if (seg) {
+        // Stag-head deadwood (dead_branch_N) is deliberate: a dead spike's
+        // whole purpose is to end in open air above the crown, so its tips are
+        // exempt from the sticks-in-air test — while its body still counts as
+        // bark for the connection and support checks.
+        seg.dead = /dead_branch/.test(child.name);
+        bark.push(seg);
+      }
     }
   });
   return { bark, foliage };
@@ -116,18 +123,23 @@ export function diagnose(group) {
     bark.some((o) => o !== self && distToBark(p, o) < Math.max(o.radius, 0.04) * 2.2);
 
   // Endpoints at ground level are root spurs meeting the soil — supported by
-  // the ground, not dangling in air.
+  // the ground, not dangling in air. (Aerial roots also end below this line,
+  // which is why the same rule covers them with no special case.)
   const tips = [];
   for (const seg of bark) {
+    if (seg.dead) continue; // deliberate deadwood — see collect()
     if (seg.b.y > 0.25 && !connected(seg.b, seg)) tips.push(seg.b);
     if (seg.a.y > 0.25 && !connected(seg.a, seg)) tips.push(seg.a);
   }
 
   // A tip with no leaf mass around it is a stick poking into open air. The
   // ellipsoid test respects each mass's real shape per axis.
-  const sticksInAir = tips.filter(
-    (tip) => !foliage.some((f) => ellipsoidDistance(tip, f) < 1.25)
-  ).length;
+  // EXCEPT on a bare/winter tree (zero foliage masses): a leafless silhouette
+  // consists entirely of branch tips in open air — that is the point of it —
+  // so the count is skipped semantically rather than driven to zero by hacks.
+  const sticksInAir = foliage.length === 0
+    ? 0
+    : tips.filter((tip) => !foliage.some((f) => ellipsoidDistance(tip, f) < 1.25)).length;
 
   // A leaf mass is supported if a branch runs inside or near it — or if it is
   // lapped onto a mass that is itself supported (accent blobs ride on the big

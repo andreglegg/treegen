@@ -65,7 +65,7 @@ document.querySelector('#app').innerHTML = `
           ${rangeField('branchCount', 'Branch count', 4, 18, 1)}
           ${rangeField('branchSpread', 'Branch spread', 0.45, 2.2, 0.01)}
           ${rangeField('canopySize', 'Canopy size', 0.9, 8, 0.01)}
-          ${rangeField('leafDensity', 'Leaf clusters', 8, 64, 1)}
+          ${rangeField('leafDensity', 'Leaf clusters', 0, 64, 1)}
           ${rangeField('leafShape', 'Leaf roundness', 0.15, 1, 0.01)}
           ${rangeField('leafSize', 'Leaf scale', 0.45, 1.7, 0.01)}
           ${rangeField('leafVariation', 'Leaf variation', 0, 1, 0.01)}
@@ -149,6 +149,7 @@ document.querySelector('#app').innerHTML = `
             <button class="preset-button" data-preset="sapling"><span>Young Sapling</span><small>Slender and upswept</small></button>
             <button class="preset-button" data-preset="ancient"><span>Ancient Oak</span><small>Squat, gnarled veteran</small></button>
             <button class="preset-button" data-preset="giant"><span>Forest Giant</span><small>42m emergent, buttressed</small></button>
+            <button class="preset-button" data-preset="snag"><span>Standing Snag</span><small>Bare, broken-top deadwood</small></button>
           </div>
         </section>
 
@@ -438,9 +439,10 @@ function bindControls() {
   document.querySelector('#resetView').addEventListener('click', frameTree);
   document.querySelectorAll('[data-preset]').forEach((button) => {
     button.addEventListener('click', () => {
-      // Reset age first: presets without an age key mean "mature", and age
-      // must not leak from a previously selected ancient/sapling preset.
-      Object.assign(state, { age: 0.5 }, presets[button.dataset.preset]);
+      // Reset age and brokenTop first: presets without those keys mean
+      // "mature, intact", and neither must leak from a previously selected
+      // ancient/sapling/snag preset.
+      Object.assign(state, { age: 0.5, brokenTop: false }, presets[button.dataset.preset]);
       regenerate();
       frameTree();
     });

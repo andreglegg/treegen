@@ -39,10 +39,19 @@ in Node and in the browser.
 
 ## Parameters
 
-Nine presets (`meadow`, `orchard`, `pine`, `oak`, `acacia`, `willow`,
-`sapling`, `ancient`, `giant`) and five species silhouettes (`round`, `oak`,
-`acacia`, `willow`, `pine`). Everything is bounded — see `paramShape` in
-`mcp/server.js` for ranges.
+Ten presets (`meadow`, `orchard`, `pine`, `oak`, `acacia`, `willow`,
+`sapling`, `ancient`, `giant`, `snag`) and five species silhouettes (`round`,
+`oak`, `acacia`, `willow`, `pine`). Everything is bounded — see `paramShape`
+in `mcp/server.js` for ranges.
+
+`leafDensity: 0` is winter/bare mode: no foliage at all, and every terminal
+branch recurses one extra depth into fine twigs so the leafless silhouette
+still reads as a tree. The `snag` preset builds on it — a standing dead tree
+with a jagged broken top (`brokenTop`) and weathered grey bark. Two more age
+cues appear on their own: broadleaf trees at `age >= 0.78` grow a few bare
+stag-head spikes above the crown (`dead_branch_N` meshes), and grown
+broadleaves over 20m at `age >= 0.6` drop strangler-fig aerial roots from
+their limbs to the ground.
 
 `age` (0–1) plays the tree's whole life: `height`/`trunkRadius` state the
 FULL-GROWN size and age moves the tree along its growth curve — a knee-high
