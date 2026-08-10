@@ -48,15 +48,16 @@ const paramShape = {
   branchSpread: z.number().min(0.45).max(2.2).optional(),
   canopySize: z.number().min(0.9).max(8).optional(),
   age: z.number().min(0).max(1).optional().describe('0 sapling, 0.5 mature, 1 ancient — drives slenderness, crown shape, droop, flare, gnarl, buttressing'),
-  leafDensity: z.number().int().min(8).max(64).optional().describe('Number of foliage clusters'),
+  leafDensity: z.number().int().min(0).max(64).optional().describe('Number of foliage clusters. 0 = bare/winter tree: no foliage, terminals grow fine twigs instead'),
   leafShape: z.number().min(0.15).max(1).optional().describe('Leaf roundness'),
   leafStyle: z.enum(LEAF_STYLES).optional(),
   leafSize: z.number().min(0.45).max(1.7).optional(),
   leafVariation: z.number().min(0).max(1).optional(),
   detail: z.number().int().min(0).max(2).optional().describe('0 low-poly, 1 game-ready, 2 hero'),
   lean: z.number().min(0).max(0.55).optional(),
+  brokenTop: z.boolean().optional().describe('Snap the trunk at ~70% height with a jagged shear — a standing-dead snag top'),
   leafPalette: z.number().int().min(0).max(8).optional(),
-  barkPalette: z.number().int().min(0).max(6).optional(),
+  barkPalette: z.number().int().min(0).max(7).optional(),
 };
 
 server.registerTool(

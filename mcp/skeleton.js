@@ -301,6 +301,46 @@ function curveBranch(start, end, bow, droop, samples) {
   return points;
 }
 
+/** Highest point of a branch path — how far up the limb reaches. */
+function peakY(branch) {
+  let y = -Infinity;
+  for (const p of branch.points) y = Math.max(y, p.y);
+  return y;
+}
+
+/**
+ * WINTER TWIGS: on a bare tree (leafDensity 0) every terminal recurses one
+ * extra depth into 2-3 short, thin twigs instead of placing a foliage anchor.
+ * The first twig is the parent's continuation (merged into its tube by the
+ * mesher); the others start at the tip — on the parent's centerline — and fan
+ * off it, so even leafless the no-floating-geometry rule holds.
+ */
+function sproutTwigs(ctx, parentId, tip, along, radius, depth) {
+  const { s, rand, branches } = ctx;
+  const count = 2 + (rand() < 0.45 ? 1 : 0);
+  for (let k = 0; k < count; k += 1) {
+    const a = rand() * Math.PI * 2;
+    const fan = k === 0 ? 0.25 : 0.6 + rand() * 0.35;
+    const dir = along
+      .clone()
+      .addScaledVector(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), fan)
+      .add(new THREE.Vector3(0, 0.18, 0))
+      .normalize();
+    const len = (0.5 + rand() * 0.5) * clamp(s.height * 0.07, 0.2, 1.1);
+    const end = tip.clone().addScaledVector(dir, len);
+    branches.push({
+      points: curveBranch(tip.clone(), end, 0.03, 0.12, 3),
+      radius: Math.max(radius * 0.55, 0.012),
+      endRadius: 0.008,
+      depth: depth + 1,
+      parent: parentId,
+      terminal: true,
+      twig: true,
+      cont: k === 0,
+    });
+  }
+}
+
 /**
  * Build the skeleton for one tree.
  *
@@ -321,12 +361,14 @@ export function buildSkeleton(params) {
 
   // Age reshapes the species profile: droop grows, the crown sinks and
   // flattens, and saplings are too young to have forked into leaders at all.
+  // A broken-top snag keeps a single pole: the break IS the silhouette, and a
+  // fork below a 70% break would leave stubs fighting the shear for attention.
   const profile = {
     ...baseProfile,
     droop: baseProfile.droop + fx.droopAdd,
     crownStart: clamp(baseProfile.crownStart + fx.crownShift, 0.15, 0.8),
     crownY: clamp(baseProfile.crownY + fx.crownShift * 0.5, 0.3, 0.95),
-    split: fx.age < 0.35 ? null : baseProfile.split,
+    split: fx.age < 0.35 || s.brokenTop ? null : baseProfile.split,
   };
   let spine = buildSpine(s, rand, profile, fx);
 
@@ -355,19 +397,44 @@ export function buildSkeleton(params) {
     spine = trimSpine(spine, crownCentre.y + ry * (profile.curtain ? 0.5 : 0.85));
   }
 
+  // SNAG: a storm-broken top. The trunk stops at ~70% of its height and the
+  // final ring keeps ~40% of the local radius instead of tapering to a point —
+  // a blunt shear face, tilted sideways by a short offset stub so the flat cap
+  // reads as a jagged break rather than a chainsaw cut. The tilt phase is
+  // hashed from the seed (like bark fluting) so no rand() draw shifts the
+  // stream of any tree built without brokenTop.
+  if (s.brokenTop) {
+    spine = trimSpine(spine, s.height * 0.7);
+    const last = spine[spine.length - 1];
+    const jag = ((Number(s.seed) % 83) / 83) * Math.PI * 2;
+    spine.push({
+      p: last.p.clone().add(new THREE.Vector3(
+        Math.cos(jag) * last.r * 0.45,
+        last.r * 0.7,
+        Math.sin(jag) * last.r * 0.45
+      )),
+      r: last.r * 0.4,
+    });
+  }
+
   const branches = [];
   const anchors = [];
   const maxDepth = 2 + Number(s.detail);
-  const leafCount = Math.max(1, Math.round(Number(s.leafDensity) * fx.leafGrowth));
+  // WINTER/BARE MODE: leafDensity 0 means no foliage at all. The branch
+  // machinery still runs (with a synthetic quota, see buildBroadleaf) and each
+  // terminal recurses one extra depth into fine twigs instead of placing an
+  // anchor — the fine outer web is what carries a leafless silhouette.
+  const bare = Number(s.leafDensity) <= 0;
+  const leafCount = bare ? 0 : Math.max(1, Math.round(Number(s.leafDensity) * fx.leafGrowth));
 
   if (s.species === 'pine') {
-    buildConifer({ s, rand, spine, profile, branches, anchors, crownCentre });
+    buildConifer({ s, rand, spine, profile, branches, anchors, crownCentre, bare });
   } else if (profile.builder === 'palm') {
-    buildPalm({ s, rand, spine, profile, branches, anchors });
+    buildPalm({ s, rand, spine, profile, branches, anchors, bare });
   } else {
     buildBroadleaf({
       s, rand, spine, profile, branches, anchors,
-      crownCentre, rx, ry, maxDepth, leafCount,
+      crownCentre, rx, ry, maxDepth, leafCount, bare,
     });
   }
 
@@ -396,6 +463,90 @@ export function buildSkeleton(params) {
         terminal: false,
         root: true,
       });
+    }
+  }
+
+  // STAG-HEAD DEADWOOD: ancient broadleaf trees carry a few bare tapered
+  // spikes rising above the crown from the topmost primaries — the classic
+  // retrenchment cue of a veteran tree. Drawn AFTER the root spurs so the
+  // extra rand() calls extend the stream instead of shifting it: an existing
+  // seed keeps its exact tree, plus spikes. The mesher names these
+  // dead_branch_N and the diagnostics exempt them from the sticks-in-air test
+  // (ending in open air is their entire point).
+  if (s.species !== 'pine' && fx.age >= 0.78) {
+    const limbs = branches
+      .filter((b) => b.depth === 0 && !b.root && !b.twig)
+      .sort((a, b) => peakY(b) - peakY(a));
+    const crownTop = crownCentre.y + ry;
+    const count = Math.min(limbs.length, 2 + Math.floor(rand() * 3)); // 2-4
+    for (let i = 0; i < count; i += 1) {
+      const limb = limbs[i];
+      const idx = clamp(
+        Math.round((0.55 + rand() * 0.3) * (limb.points.length - 1)),
+        1, limb.points.length - 1
+      );
+      const start = limb.points[idx].clone(); // ON the limb centerline
+      // Length scales with crown height; the end is pushed above the crown
+      // hull so the spike actually breaks the silhouette.
+      const len = crownTop * (0.17 + rand() * 0.1);
+      const a = rand() * Math.PI * 2;
+      const end = new THREE.Vector3(
+        start.x + Math.cos(a) * len * 0.3,
+        Math.max(start.y + len * 0.85, crownTop + len * 0.45),
+        start.z + Math.sin(a) * len * 0.3
+      );
+      const u = idx / (limb.points.length - 1);
+      const atR = lerp(limb.radius, limb.endRadius, u);
+      // Thick enough at the base to read at a distance — a hairline spike
+      // disappears against the crown and the cue is lost.
+      branches.push({
+        points: curveBranch(start, end, 0.03, -0.02, 4),
+        radius: Math.max(Math.min(atR * 0.75, limb.radius), 0.05),
+        endRadius: 0.008, // tapers to a point — a dead spike, not a limb
+        depth: 1,
+        parent: branches.indexOf(limb),
+        terminal: false,
+        dead: true,
+      });
+    }
+  }
+
+  // AERIAL ROOTS: the strangler-fig cue. Giant grown broadleaves (>20m, the
+  // giant blend) that are old enough drop a few near-straight vertical tubes
+  // from major limbs to the ground. Ends sink below grade (y < 0) so the
+  // diagnostics' existing ground rule (endpoints at y <= 0.25 are supported by
+  // the soil) covers them without change. Also drawn after all prior draws.
+  if (s.species !== 'pine' && fx.age >= 0.6 && s.height > 20) {
+    const limbs = branches.filter(
+      (b) => b.depth === 0 && !b.root && !b.twig && !b.dead && peakY(b) > s.height * 0.3
+    );
+    if (limbs.length) {
+      const count = 2 + Math.floor(rand() * 3); // 2-4
+      for (let i = 0; i < count; i += 1) {
+        const limb = limbs[i % limbs.length];
+        const idx = clamp(
+          Math.round((0.45 + rand() * 0.4) * (limb.points.length - 1)),
+          1, limb.points.length - 1
+        );
+        const start = limb.points[idx].clone(); // ON the limb centerline
+        if (start.y < s.height * 0.2) continue; // too low to read as aerial
+        const end = new THREE.Vector3(
+          start.x + (rand() - 0.5) * 0.4,
+          -0.05,
+          start.z + (rand() - 0.5) * 0.4
+        );
+        const radius = Math.max(0.05, s.trunkRadius * 0.08);
+        branches.push({
+          // Near-straight: barely bowed, no droop — a taut hanging root.
+          points: curveBranch(start, end, 0.015, 0, 4),
+          radius,
+          endRadius: radius * 0.85,
+          depth: 0,
+          parent: branches.indexOf(limb),
+          terminal: false,
+          aerial: true,
+        });
+      }
     }
   }
 
@@ -476,7 +627,14 @@ function buildBroadleaf(ctx) {
   // trunk tip pokes through the top of the dome on some seeds — and how much
   // trimming would hide it varies seed by seed, while a cap always covers it.
   let budget = leafCount;
-  if (profile.curtain && spine.length) {
+  if (ctx.bare) {
+    // Bare/winter tree: no anchors will be placed, but the same quota
+    // machinery must still grow a full branch hierarchy or the tree would be
+    // a naked pole. Three "virtual leaves" per primary reproduces the depth a
+    // mid-density leafy tree would have; grow() turns each would-be anchor
+    // into fine twigs instead.
+    budget = primaries * 3;
+  } else if (profile.curtain && spine.length) {
     anchors.push(makeAnchor({ ...ctx, strandAmount: 0 }, spine[spine.length - 1].p, rand));
     budget = Math.max(1, leafCount - 1);
   }
@@ -581,10 +739,15 @@ function buildBroadleaf(ctx) {
   });
 
   // A leader every target snubbed still cannot end bare — cap it with a leaf
-  // mass of its own.
+  // mass of its own (or, on a winter tree, let it break up into twigs).
   for (const [leader, assigned] of perLeader) {
     if (assigned.length) continue;
     const tip = leader.points[leader.points.length - 1];
+    if (ctx.bare) {
+      const along = new THREE.Vector3(leader.dir.x, 0.6, leader.dir.z).normalize();
+      sproutTwigs(ctx, leader.id, tip.clone(), along, leader.radius, 0);
+      continue;
+    }
     const anchor = makeAnchor(ctx, tip, rand);
     anchors.push(anchor);
     branches[leader.id].anchorRef = anchor;
@@ -605,7 +768,10 @@ function grow(ctx) {
   // dropping the tip afterwards would leave the branch above it bare.
   let aim = target;
   let strandAmount = 0;
-  if (terminal && profile.curtain) {
+  // Curtain drop is skipped on bare trees: strand length is derived from leaf
+  // mass size, which is meaningless with zero leaves — the winter droop comes
+  // from the twigs instead.
+  if (terminal && profile.curtain && !ctx.bare) {
     const out = Math.hypot(target.x - ctx.crownCentre.x, target.z - ctx.crownCentre.z);
     const outward = clamp(out / (ctx.rx || 1), 0, 1);
     strandAmount = outward;
@@ -649,6 +815,13 @@ function grow(ctx) {
   const tip = points[points.length - 1];
 
   if (terminal) {
+    if (ctx.bare) {
+      // Winter/bare mode: recurse ONE extra depth into fine twigs instead of
+      // placing a foliage anchor — see sproutTwigs.
+      const along = new THREE.Vector3().subVectors(tip, points[points.length - 2]).normalize();
+      sproutTwigs(ctx, id, tip, along, endRadius, depth);
+      return;
+    }
     // Depth ran out before the quota did (few branches, dense foliage): clump
     // the remainder around this tip rather than losing the leaf budget.
     const clump = Math.max(1, quota);
@@ -813,6 +986,7 @@ function buildConifer(ctx) {
       // safely past the mesher's swallowed-twig cull; an earlier 0.78/0.30
       // survived that cull by 0.2% and quietly died when retuned.
       const end = start.clone().addScaledVector(dir, reach * 0.88).setY(at.p.y - reach * 0.16);
+      const id = branches.length;
       branches.push({
         points: curveBranch(start, end, -0.05, profile.droop * 0.5, 3),
         radius: at.r * 0.34,
@@ -820,9 +994,19 @@ function buildConifer(ctx) {
         depth: 0,
         parent: -1,
         terminal: true,
-        leafRadius: reach,
+        // A bare conifer has no skirt to be swallowed by — keep the branch.
+        leafRadius: ctx.bare ? 0 : reach,
       });
+      // Winter/bare: the whorl branch tips break up into fine twigs, same as
+      // broadleaf terminals do. Use the real curved tip, not the pre-droop end.
+      if (ctx.bare) {
+        const pts = branches[id].points;
+        sproutTwigs(ctx, id, pts[pts.length - 1].clone(), dir, at.r * 0.1, 0);
+      }
     }
+
+    // Bare tree: whorl structure only, no foliage skirts.
+    if (ctx.bare) continue;
 
     // One conical skirt per whorl, wide enough to contain its whorl's branches.
     anchors.push({
@@ -876,14 +1060,20 @@ function buildPalm(ctx) {
     // half-length out leaves the blade's inner end at the trunk apex, so the
     // frond visibly grows FROM the crown shaft.
     const centre = apex.p.clone().addScaledVector(dir, radius * 0.85);
+    // Bare/winter mode: a dead palm keeps short drooping stubs (the collapsed
+    // frond bases) but grows no blades.
+    const stubEnd = ctx.bare
+      ? apex.p.clone().addScaledVector(dir, radius * 0.4).add(new THREE.Vector3(0, -radius * 0.12, 0))
+      : centre;
     branches.push({
-      points: curveBranch(apex.p.clone(), centre, 0.05, 0, 3),
+      points: curveBranch(apex.p.clone(), stubEnd, 0.05, 0, 3),
       radius: apex.r * 0.5,
       endRadius: apex.r * 0.18,
       depth: 0,
       parent: -1,
       terminal: true,
     });
+    if (ctx.bare) continue;
 
     anchors.push({
       p: centre,
