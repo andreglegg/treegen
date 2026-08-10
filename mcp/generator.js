@@ -240,41 +240,72 @@ export function buildTree(params = {}) {
   const tall = 0.6 + roundness * 0.7;
   const flat = s.leafStyle === 'flat' ? 0.34 : 1;
 
-  // Branches. Twigs get fewer sides, and a twig is culled only when its leaf
-  // mass genuinely swallows it. The test uses the mass's SMALLEST half-extent:
-  // judging by nominal radius culled near-vertical twigs under flattened pads
-  // (acacia) and left the parent limb ending in open air below the foliage.
-  let branchIndex = 0;
-  for (const branch of skel.branches) {
+  // Branches are meshed as CONTINUOUS PATHS, not per-segment tubes. Each
+  // skeleton branch marked `cont` starts flush at its parent's last point, so
+  // a parent and its continuation chain merge into one poly-line extruded as
+  // a single tube — there is no junction to mis-align. Side shoots start a new
+  // path, but their first point lies ON the parent's centerline, so their tube
+  // begins strictly inside the parent and emerges through its flank. Between
+  // the two rules, a branch that starts in open air cannot be constructed.
+  const swallowed = (branch) => {
     const p = branch.points;
     const length = p[0].distanceTo(p[p.length - 1]);
-    if (branch.leafRadius) {
-      // Conifer skirt branches: reach-based, the skirt is as tall as it is wide.
-      if (length < branch.leafRadius * 0.85) continue;
-    } else if (branch.anchorRef) {
+    if (branch.leafRadius) return length < branch.leafRadius * 0.85; // conifer skirt
+    if (branch.anchorRef) {
       const a = branch.anchorRef;
       const minHalf = a.radius * Math.min(wide * (a.width ?? 1), tall * (a.aspect ?? 1) * flat);
-      if (length < minHalf * 0.9) continue;
+      return length < minHalf * 0.9;
     }
-    // Leaders are trunk, structurally and visually — they get the trunk's
-    // silhouette resolution rather than a twig's.
-    const sides = branch.leader ? trunkSides : Math.max(3, trunkSides - 2 - branch.depth * 2);
-    const radii = branch.points.map((_, i) => {
-      const u = i / (branch.points.length - 1);
-      return Math.max(0.01, branch.radius + (branch.endRadius - branch.radius) * u);
+    return false;
+  };
+
+  // parent id -> its continuation branch
+  const contOf = new Map();
+  skel.branches.forEach((branch, id) => {
+    branch.id = id;
+    if (branch.cont && branch.parent >= 0) contOf.set(branch.parent, branch);
+  });
+
+  let branchIndex = 0;
+  for (const head of skel.branches) {
+    if (head.cont) continue; // absorbed into its parent's path
+    if (swallowed(head) && !contOf.has(head.id)) continue; // lone hidden twig
+
+    // Walk the continuation chain, concatenating centerline and radii. A
+    // culled terminal tail just ends the path early — its leaf mass covers
+    // the last visible point by the cull's own criterion.
+    const pts = [...head.points];
+    const radii = head.points.map((_, i) => {
+      const u = i / (head.points.length - 1);
+      return Math.max(0.01, head.radius + (head.endRadius - head.radius) * u);
     });
+    let cur = head;
+    while (contOf.has(cur.id)) {
+      const next = contOf.get(cur.id);
+      if (swallowed(next)) break;
+      for (let i = 1; i < next.points.length; i += 1) {
+        const u = i / (next.points.length - 1);
+        pts.push(next.points[i]);
+        radii.push(Math.max(0.01, next.radius + (next.endRadius - next.radius) * u));
+      }
+      cur = next;
+    }
+
+    // Leaders are trunk, structurally and visually — trunk resolution. Other
+    // paths get sides by the depth they start at.
+    const sides = head.leader ? trunkSides : Math.max(3, trunkSides - 2 - head.depth * 2);
     const mesh = new THREE.Mesh(
-      tubeGeometry(branch.points, radii, sides, 'end'),
-      branch.depth >= 2 ? barkAltMat : barkMat
+      tubeGeometry(pts, radii, sides, 'end'),
+      head.depth >= 2 ? barkAltMat : barkMat
     );
     mesh.name = `branch_segment_${branchIndex}`;
     mesh.userData.axis = {
-      a: branch.points[0].clone(),
-      b: branch.points[branch.points.length - 1].clone(),
-      radius: branch.radius,
-      // The curve itself, so defect checks can test against the real path
+      a: pts[0].clone(),
+      b: pts[pts.length - 1].clone(),
+      radius: radii[0],
+      // The full centerline, so defect checks test against the real path
       // rather than the chord of a bowed limb.
-      points: branch.points.map((p) => p.clone()),
+      points: pts.map((p) => p.clone()),
     };
     branchIndex += 1;
     root.add(mesh);

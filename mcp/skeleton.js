@@ -388,21 +388,19 @@ function buildBroadleaf(ctx) {
       at = spineAt(spine, t);
     }
 
-    // Side attachments start well INSIDE the parent so the tube emerges
-    // through its flank; offsetting to the surface left the start ring hanging
-    // partly in air. Continuations start exactly on the axis.
-    const outward = new THREE.Vector3(target.x - at.p.x, 0, target.z - at.p.z).normalize();
-    const start = at.p.clone().addScaledVector(outward, continues ? 0 : at.r * 0.25);
-
+    // Every branch starts exactly ON its parent's centerline: it is either
+    // merged into the parent tube (continuation) or begins strictly inside it
+    // and emerges through the flank. Nothing can start in open air.
     grow({
       ...ctx,
-      start,
+      start: at.p.clone(),
       target,
       quota: quotas[i],
       depth: 0,
       maxDepth,
       radius: at.r * (continues ? 0.96 : leaders.length ? 0.7 : 0.52),
       parent,
+      cont: continues,
     });
   });
 
@@ -466,6 +464,10 @@ function grow(ctx) {
     depth,
     parent,
     terminal,
+    // Continuation of its parent: starts flush at the parent's last point and
+    // carries the cross-section on. The mesher merges these chains into one
+    // continuous tube, which is what makes junction seams impossible.
+    cont: !!ctx.cont,
   });
 
   const tip = points[points.length - 1];
@@ -530,6 +532,7 @@ function grow(ctx) {
       depth: depth + 1,
       radius: isCont ? contRadius : sideRadius,
       parent: id,
+      cont: isCont,
     });
   }
 }
@@ -624,7 +627,9 @@ function buildConifer(ctx) {
     for (let k = 0; k < perWhorl; k += 1) {
       const a = GOLDEN * (i * perWhorl + k) + rand() * 0.3;
       const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
-      const start = at.p.clone().addScaledVector(dir, at.r * 0.5);
+      // Start on the trunk's centerline so the whorl branch is buried at its
+      // root and emerges through the bark.
+      const start = at.p.clone();
       // Deliberately long enough to pierce the skirt's sloped side — the tick
       // of a branch tip breaking the cone is what keeps the pine from reading
       // as stacked lampshades — while staying above the bottom rim, where a
