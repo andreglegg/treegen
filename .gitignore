@@ -4,3 +4,4 @@ treegen-out
 graphify-out
 .DS_Store
 *.local
+inspect-out

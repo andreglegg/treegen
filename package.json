@@ -13,7 +13,9 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "mcp": "node mcp/server.js"
+    "mcp": "node mcp/server.js",
+    "inspect": "node tools/inspect.js",
+    "test": "node --test tools/*.test.js mcp/*.test.js"
   },
   "dependencies": {
     "three": "^0.168.0"
