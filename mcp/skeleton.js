@@ -291,16 +291,23 @@ function buildLeaders(ctx) {
     // Bowed outward and up, so the fork reads as a V rather than a splay.
     const points = curveBranch(foot.p.clone(), end, 0.12, -0.06, 4);
     const id = branches.length;
+    // The first leader is the trunk's continuation: the mesher extrudes trunk
+    // and leader as one ground-to-crown tube, so the fork has no cap ledge.
+    // The others start on the trunk's centerline and emerge through its flank.
+    const cont = i === 0;
+    const radius = foot.r * (cont ? 0.92 : 0.72);
+    const endRadius = foot.r * (cont ? 0.52 : 0.44);
     branches.push({
       points,
-      radius: foot.r * 0.72,
-      endRadius: foot.r * 0.44,
+      radius,
+      endRadius,
       depth: 0,
       parent: -1,
       terminal: false,
       leader: true,
+      trunkCont: cont,
     });
-    leaders.push({ id, points, dir, radius: foot.r * 0.44 });
+    leaders.push({ id, points, dir, radius: endRadius });
   }
   return leaders;
 }

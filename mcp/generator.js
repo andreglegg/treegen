@@ -217,21 +217,6 @@ export function buildTree(params = {}) {
     highlight: material('leaves_highlight', leafLight),
   };
 
-  // Trunk — one continuous swept tube from flared root to tip.
-  const trunk = new THREE.Mesh(
-    tubeGeometry(skel.spine.map((p) => p.p), skel.spine.map((p) => p.r), trunkSides),
-    barkMat
-  );
-  trunk.name = 'trunk_segment';
-  // Exact axis for the diagnostics in tools/diagnostics.js — reconstructing
-  // endpoints from a bounding box misplaces them on curved tubes.
-  trunk.userData.axis = {
-    a: skel.spine[0].p.clone(),
-    b: skel.spine[skel.spine.length - 1].p.clone(),
-    radius: skel.spine[0].r,
-  };
-  root.add(trunk);
-
   // How leaf masses will be scaled — needed before the branch loop, because
   // whether a twig can be culled depends on the real shape of the mass that
   // hides it.
@@ -266,49 +251,77 @@ export function buildTree(params = {}) {
     if (branch.cont && branch.parent >= 0) contOf.set(branch.parent, branch);
   });
 
-  let branchIndex = 0;
-  for (const head of skel.branches) {
-    if (head.cont) continue; // absorbed into its parent's path
-    if (swallowed(head) && !contOf.has(head.id)) continue; // lone hidden twig
-
-    // Walk the continuation chain, concatenating centerline and radii. A
-    // culled terminal tail just ends the path early — its leaf mass covers
-    // the last visible point by the cull's own criterion.
-    const pts = [...head.points];
-    const radii = head.points.map((_, i) => {
-      const u = i / (head.points.length - 1);
-      return Math.max(0.01, head.radius + (head.endRadius - head.radius) * u);
-    });
+  // Walk a continuation chain from `head`, concatenating centerline and radii
+  // into (pts, radii). A culled terminal tail just ends the path early — its
+  // leaf mass covers the last visible point by the cull's own criterion.
+  const appendChain = (head, pts, radii) => {
     let cur = head;
-    while (contOf.has(cur.id)) {
-      const next = contOf.get(cur.id);
-      if (swallowed(next)) break;
-      for (let i = 1; i < next.points.length; i += 1) {
-        const u = i / (next.points.length - 1);
-        pts.push(next.points[i]);
-        radii.push(Math.max(0.01, next.radius + (next.endRadius - next.radius) * u));
+    let first = true;
+    while (cur) {
+      const from = first ? 0 : 1;
+      for (let i = from; i < cur.points.length; i += 1) {
+        const u = i / (cur.points.length - 1);
+        pts.push(cur.points[i]);
+        radii.push(Math.max(0.01, cur.radius + (cur.endRadius - cur.radius) * u));
       }
-      cur = next;
+      first = false;
+      const next = contOf.get(cur.id);
+      cur = next && !swallowed(next) ? next : null;
     }
+  };
 
-    // Leaders are trunk, structurally and visually — trunk resolution. Other
-    // paths get sides by the depth they start at.
-    const sides = head.leader ? trunkSides : Math.max(3, trunkSides - 2 - head.depth * 2);
-    const mesh = new THREE.Mesh(
-      tubeGeometry(pts, radii, sides, 'end'),
-      head.depth >= 2 ? barkAltMat : barkMat
-    );
-    mesh.name = `branch_segment_${branchIndex}`;
+  const addBark = (name, pts, radii, sides, caps, mat) => {
+    const mesh = new THREE.Mesh(tubeGeometry(pts, radii, sides, caps), mat);
+    mesh.name = name;
+    // Exact centerline for the diagnostics — bounding boxes misplace the
+    // endpoints of bowed tubes.
     mesh.userData.axis = {
       a: pts[0].clone(),
       b: pts[pts.length - 1].clone(),
       radius: radii[0],
-      // The full centerline, so defect checks test against the real path
-      // rather than the chord of a bowed limb.
       points: pts.map((p) => p.clone()),
     };
-    branchIndex += 1;
     root.add(mesh);
+  };
+
+  // Trunk — one continuous tube from flared root THROUGH the fork: when the
+  // species splits into leaders, the first leader is the trunk's continuation
+  // and the whole chain up to the crown extrudes as a single piece. The old
+  // separate trunk mesh ended in a cap at the fork, which read as a ledge.
+  const trunkPts = skel.spine.map((p) => p.p);
+  const trunkRadii = skel.spine.map((p) => p.r);
+  const trunkHead = skel.branches.find((b) => b.trunkCont);
+  if (trunkHead) {
+    // The leader's first point coincides with the spine's last — skip it.
+    const pts = trunkPts.slice(0, -1);
+    const radii = trunkRadii.slice(0, -1);
+    appendChain(trunkHead, pts, radii);
+    addBark('trunk_segment', pts, radii, trunkSides, true, barkMat);
+  } else {
+    addBark('trunk_segment', trunkPts, trunkRadii, trunkSides, true, barkMat);
+  }
+
+  let branchIndex = 0;
+  for (const head of skel.branches) {
+    if (head.cont || head.trunkCont) continue; // absorbed into another path
+    if (swallowed(head) && !contOf.has(head.id)) continue; // lone hidden twig
+
+    const pts = [];
+    const radii = [];
+    appendChain(head, pts, radii);
+
+    // Leaders are trunk, structurally and visually — trunk resolution. Other
+    // paths get sides by the depth they start at.
+    const sides = head.leader ? trunkSides : Math.max(3, trunkSides - 2 - head.depth * 2);
+    addBark(
+      `branch_segment_${branchIndex}`,
+      pts,
+      radii,
+      sides,
+      'end',
+      head.depth >= 2 ? barkAltMat : barkMat
+    );
+    branchIndex += 1;
   }
 
   // Foliage. One geometry instance shared by every mass of the same style;
