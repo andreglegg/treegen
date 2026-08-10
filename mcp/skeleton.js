@@ -206,7 +206,10 @@ export function buildSkeleton(params) {
   const profile = SPECIES_PROFILES[s.species] ?? SPECIES_PROFILES.round;
   let spine = buildSpine(s, rand, profile);
 
-  const canopy = Number(s.canopySize);
+  // A crown wider than the tree is tall swallows the trunk and the result
+  // reads as a bush. Only binds on short trees; at the default height and
+  // above, canopySize passes through untouched.
+  const canopy = Math.min(Number(s.canopySize), Number(s.height) * 0.42);
   const spread = Number(s.branchSpread);
   // Vary the crown itself per seed, not just the branch jitter inside it.
   // Without this every seed of a species shares one silhouette and the

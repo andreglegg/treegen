@@ -13,151 +13,13 @@ import {
   Sprout,
   Wind,
 } from 'lucide';
+// Geometry comes from the shared generator — the same code the MCP server and
+// library consumers use. This app only re-materialises it for preview.
+import { buildTree as generateTree, meshStats, presets, leafPalettes, barkPalettes } from '../mcp/generator.js';
 
-const leafPalettes = [
-  ['#7faa52', '#4f7f43', '#d7b447'],
-  ['#5f9d65', '#2f6e4f', '#9dc967'],
-  ['#d77d42', '#b24d34', '#e1b64d'],
-  ['#84a8d7', '#537eb3', '#d9eef4'],
-  ['#be6f8b', '#7f4f88', '#ead1db'],
-  ['#96a64f', '#596f35', '#e2d77d'],
-  ['#4b8d88', '#28605c', '#9fcbc2'],
-  ['#ba5360', '#742f43', '#eea07e'],
-];
+const FOLIAGE = /leaf_cluster|pine_bough/;
 
-const barkPalettes = [
-  ['#8a5735', '#5c3924'],
-  ['#a16a3e', '#73462a'],
-  ['#6b5a47', '#44382d'],
-  ['#b58254', '#7d5134'],
-  ['#584434', '#31261d'],
-  ['#73735e', '#48483d'],
-];
-
-const presets = {
-  meadow: {
-    species: 'round',
-    seed: 4192,
-    height: 6.2,
-    trunkRadius: 0.45,
-    branchCount: 11,
-    branchSpread: 1.25,
-    canopySize: 2.35,
-    leafDensity: 34,
-    leafShape: 0.66,
-    leafStyle: 'clustered',
-    leafSize: 1,
-    leafVariation: 0.55,
-    detail: 1,
-    lean: 0.18,
-    leafPalette: 0,
-    barkPalette: 1,
-    toon: true,
-    wind: true,
-  },
-  orchard: {
-    species: 'round',
-    seed: 1327,
-    height: 4.9,
-    trunkRadius: 0.38,
-    branchCount: 8,
-    branchSpread: 1.65,
-    canopySize: 2.65,
-    leafDensity: 42,
-    leafShape: 0.35,
-    leafStyle: 'rounded',
-    leafSize: 1.1,
-    leafVariation: 0.4,
-    detail: 0,
-    lean: 0.08,
-    leafPalette: 2,
-    barkPalette: 0,
-    toon: true,
-    wind: false,
-  },
-  pine: {
-    species: 'pine',
-    seed: 7714,
-    height: 7.8,
-    trunkRadius: 0.34,
-    branchCount: 12,
-    branchSpread: 0.88,
-    canopySize: 2.15,
-    leafDensity: 28,
-    leafShape: 0.8,
-    leafStyle: 'needles',
-    leafSize: 1,
-    leafVariation: 0.6,
-    detail: 1,
-    lean: 0.12,
-    leafPalette: 1,
-    barkPalette: 4,
-    toon: true,
-    wind: true,
-  },
-  oak: {
-    species: 'oak',
-    seed: 3048,
-    height: 6.7,
-    trunkRadius: 0.6,
-    branchCount: 15,
-    branchSpread: 1.75,
-    canopySize: 2.8,
-    leafDensity: 46,
-    leafShape: 0.4,
-    leafStyle: 'angular',
-    leafSize: 0.92,
-    leafVariation: 0.72,
-    detail: 1,
-    lean: 0.1,
-    leafPalette: 5,
-    barkPalette: 4,
-    toon: true,
-    wind: true,
-  },
-  acacia: {
-    species: 'acacia',
-    seed: 6291,
-    height: 6.8,
-    trunkRadius: 0.42,
-    branchCount: 10,
-    branchSpread: 2.05,
-    canopySize: 3.05,
-    leafDensity: 38,
-    leafShape: 0.24,
-    leafStyle: 'flat',
-    leafSize: 1.2,
-    leafVariation: 0.5,
-    detail: 1,
-    lean: 0.24,
-    leafPalette: 6,
-    barkPalette: 2,
-    toon: true,
-    wind: true,
-  },
-  willow: {
-    species: 'willow',
-    seed: 8174,
-    height: 6.1,
-    trunkRadius: 0.4,
-    branchCount: 12,
-    branchSpread: 1.8,
-    canopySize: 2.55,
-    leafDensity: 52,
-    leafShape: 0.8,
-    leafStyle: 'flat',
-    leafSize: 0.85,
-    leafVariation: 0.65,
-    detail: 1,
-    lean: 0.16,
-    leafPalette: 1,
-    barkPalette: 5,
-    toon: true,
-    wind: true,
-  },
-};
-
-const state = { ...presets.meadow };
+const state = { ...presets.meadow, toon: true, wind: true };
 const leaves = [];
 let treeRoot;
 let renderer;
@@ -330,15 +192,6 @@ function setIcons() {
   icon(document.querySelector('#exportPng'), Image, 'Save PNG preview');
 }
 
-function rng(seed) {
-  let value = seed % 2147483647;
-  if (value <= 0) value += 2147483646;
-  return () => {
-    value = (value * 16807) % 2147483647;
-    return (value - 1) / 2147483646;
-  };
-}
-
 function initThree() {
   const canvas = document.querySelector('#scene');
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -387,179 +240,70 @@ function resize() {
   camera.updateProjectionMatrix();
 }
 
-function material(name, color, type = 'toon') {
-  const MaterialType = state.toon && type === 'toon' ? THREE.MeshToonMaterial : THREE.MeshStandardMaterial;
-  const mat =
-    MaterialType === THREE.MeshToonMaterial
-      ? new MaterialType({ color })
-      : new MaterialType({ color, roughness: 0.84, metalness: 0 });
-  mat.name = name;
-  return mat;
+/**
+ * Swap the generator's MeshStandardMaterials for toon equivalents, keeping one
+ * instance per material name so the swap doesn't multiply draw calls.
+ */
+function toonify(root) {
+  const cache = new Map();
+  root.traverse((child) => {
+    if (!child.isMesh) return;
+    const { name } = child.material;
+    if (!cache.has(name)) {
+      const toon = new THREE.MeshToonMaterial({ color: child.material.color.clone() });
+      toon.name = name;
+      cache.set(name, toon);
+    }
+    child.material = cache.get(name);
+  });
 }
 
-function addTrunkSegment(parent, start, end, r0, r1, mat, sides) {
-  const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
-  const length = start.distanceTo(end);
-  const geom = new THREE.CylinderGeometry(r1, r0, length, sides, 1, false);
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.name = 'trunk_segment';
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.position.copy(mid);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3().subVectors(end, start).normalize());
-  parent.add(mesh);
-  return mesh;
-}
-
-function addLeafBlob(parent, position, scale, mat, rand, index) {
-  const detail = Math.max(0, Math.min(2, state.detail));
-  const geometryByStyle = {
-    clustered: () => new THREE.IcosahedronGeometry(1, detail),
-    angular: () => new THREE.DodecahedronGeometry(1, detail),
-    rounded: () => new THREE.SphereGeometry(1, 8 + detail * 4, 5 + detail * 2),
-    flat: () => new THREE.IcosahedronGeometry(1, Math.max(0, detail - 1)),
-    needles: () => new THREE.ConeGeometry(1, 1.7, 5 + detail * 2, 1),
-  };
-  const geom = geometryByStyle[state.leafStyle]();
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.name = `leaf_cluster_${index}`;
-  mesh.position.copy(position);
-  mesh.scale.set(scale.x, state.leafStyle === 'flat' ? scale.y * 0.32 : scale.y, scale.z);
-  mesh.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.userData.windPhase = rand() * Math.PI * 2;
-  mesh.userData.basePosition = position.clone();
-  mesh.userData.baseRotation = mesh.rotation.clone();
-  parent.add(mesh);
-  leaves.push(mesh);
-}
-
-function addPineLayer(parent, y, radius, height, mat, sides, rand, index) {
-  const geom = new THREE.ConeGeometry(radius, height, sides, 1, false);
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.name = `pine_bough_layer_${index}`;
-  mesh.position.set((rand() - 0.5) * 0.16, y, (rand() - 0.5) * 0.16);
-  mesh.rotation.y = rand() * Math.PI;
-  mesh.scale.x = 1 + (rand() - 0.5) * 0.18;
-  mesh.scale.z = 1 + (rand() - 0.5) * 0.18;
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.userData.windPhase = rand() * Math.PI * 2;
-  mesh.userData.basePosition = mesh.position.clone();
-  mesh.userData.baseRotation = mesh.rotation.clone();
-  parent.add(mesh);
-  leaves.push(mesh);
+function dispose(root) {
+  const seen = new Set();
+  root.traverse((child) => {
+    if (!child.isMesh) return;
+    if (!seen.has(child.geometry)) {
+      seen.add(child.geometry);
+      child.geometry.dispose();
+    }
+    if (!seen.has(child.material)) {
+      seen.add(child.material);
+      child.material.dispose();
+    }
+  });
 }
 
 function buildTree() {
   leaves.length = 0;
-  if (treeRoot) scene.remove(treeRoot);
-  treeRoot = new THREE.Group();
-  treeRoot.name = 'Treegen_asset';
+  if (treeRoot) {
+    scene.remove(treeRoot);
+    dispose(treeRoot);
+  }
+
+  treeRoot = generateTree(state);
+  if (state.toon) toonify(treeRoot);
+
+  treeRoot.traverse((child) => {
+    if (!child.isMesh) return;
+    child.castShadow = true;
+    child.receiveShadow = true;
+    if (!FOLIAGE.test(child.name)) return;
+    // Derive the sway offset from position so it is stable across rebuilds
+    // rather than drifting every time the tree is regenerated.
+    child.userData.windPhase = (child.position.x * 3.1 + child.position.z * 5.7) % (Math.PI * 2);
+    child.userData.basePosition = child.position.clone();
+    child.userData.baseRotation = child.rotation.clone();
+    leaves.push(child);
+  });
+
   scene.add(treeRoot);
-
-  const rand = rng(Number(state.seed));
-  const sides = [6, 8, 12][Number(state.detail)];
-  const [barkBase, barkDark] = barkPalettes[state.barkPalette];
-  const [leafBase, leafDark, leafLight] = leafPalettes[state.leafPalette];
-  const barkMat = material('bark_toon', barkBase);
-  const barkAltMat = material('bark_shadow', barkDark);
-  const leafMats = [
-    material('leaves_base', leafBase),
-    material('leaves_shadow', leafDark),
-    material('leaves_highlight', leafLight),
-  ];
-
-  const top = new THREE.Vector3(state.lean, state.height, state.lean * 0.45);
-  addTrunkSegment(treeRoot, new THREE.Vector3(0, 0, 0), top, state.trunkRadius, state.trunkRadius * 0.34, barkMat, sides);
-  addTrunkSegment(
-    treeRoot,
-    new THREE.Vector3(0.05, state.height * 0.08, -0.04),
-    new THREE.Vector3(-0.03, state.height * 0.86, 0.03),
-    state.trunkRadius * 0.58,
-    state.trunkRadius * 0.18,
-    barkAltMat,
-    sides
-  );
-
-  if (state.species === 'pine') buildPine(rand, sides, leafMats, barkMat);
-  else buildBroadleaf(rand, sides, leafMats, barkMat);
-
   updateMetrics();
 }
 
-function buildBroadleaf(rand, sides, leafMats, barkMat) {
-  const profiles = {
-    round: { canopyY: 0.86, width: 1, vertical: 0.9, branchBase: 0.43, branchRange: 0.42, rise: 0.55 },
-    oak: { canopyY: 0.76, width: 1.25, vertical: 0.72, branchBase: 0.34, branchRange: 0.43, rise: 0.28 },
-    acacia: { canopyY: 0.83, width: 1.42, vertical: 0.33, branchBase: 0.55, branchRange: 0.24, rise: 0.12 },
-    willow: { canopyY: 0.76, width: 1.12, vertical: 1.15, branchBase: 0.4, branchRange: 0.32, rise: -0.12 },
-  };
-  const profile = profiles[state.species] ?? profiles.round;
-  const canopyCenter = new THREE.Vector3(state.lean * 1.25, state.height * profile.canopyY, 0);
-  const branches = Number(state.branchCount);
-  for (let i = 0; i < branches; i += 1) {
-    const t = branches === 1 ? 0 : i / (branches - 1);
-    const angle = t * Math.PI * 2 + rand() * 0.4;
-    const y = state.height * (profile.branchBase + rand() * profile.branchRange);
-    const len = state.branchSpread * profile.width * (1.05 + rand() * 0.8);
-    const start = new THREE.Vector3(state.lean * (y / state.height), y, 0);
-    const rise = profile.rise + rand() * (state.species === 'willow' ? 0.3 : 0.8);
-    const end = start.clone().add(new THREE.Vector3(Math.cos(angle) * len, rise, Math.sin(angle) * len));
-    addTrunkSegment(treeRoot, start, end, state.trunkRadius * 0.2, state.trunkRadius * 0.06, barkMat, sides);
-  }
-
-  const count = Number(state.leafDensity);
-  for (let i = 0; i < count; i += 1) {
-    const angle = rand() * Math.PI * 2;
-    const radius = Math.sqrt(rand()) * state.canopySize * profile.width;
-    const vertical = (rand() - 0.42) * state.canopySize * profile.vertical;
-    const position = canopyCenter.clone().add(new THREE.Vector3(Math.cos(angle) * radius, vertical, Math.sin(angle) * radius * 0.92));
-    if (state.species === 'willow') position.y -= Math.max(0, radius - state.canopySize * 0.45) * 0.45;
-    const variation = Number(state.leafVariation);
-    const lump = (0.48 + rand() * 0.36 * variation) * Number(state.leafSize);
-    const roundness = Number(state.leafShape);
-    const scale = new THREE.Vector3(
-      lump * (1.25 - roundness * 0.28),
-      lump * (0.55 + roundness * 0.8) * (0.9 + rand() * variation * 0.25),
-      lump * (1.15 - roundness * 0.18)
-    );
-    addLeafBlob(treeRoot, position, scale, leafMats[i % leafMats.length], rand, i + 1);
-  }
-}
-
-function buildPine(rand, sides, leafMats, barkMat) {
-  const layers = Math.max(6, Math.round(state.leafDensity / 3));
-  for (let i = 0; i < Number(state.branchCount); i += 1) {
-    const y = state.height * (0.22 + rand() * 0.62);
-    const angle = rand() * Math.PI * 2;
-    const len = state.branchSpread * (1.25 - y / state.height) * 1.9;
-    const start = new THREE.Vector3(state.lean * (y / state.height), y, 0);
-    const end = start.clone().add(new THREE.Vector3(Math.cos(angle) * len, -0.14 + rand() * 0.28, Math.sin(angle) * len));
-    addTrunkSegment(treeRoot, start, end, state.trunkRadius * 0.14, state.trunkRadius * 0.035, barkMat, sides);
-  }
-  for (let i = 0; i < layers; i += 1) {
-    const t = i / Math.max(1, layers - 1);
-    const y = state.height * (0.28 + t * 0.68);
-    const variation = 1 + (rand() - 0.5) * Number(state.leafVariation) * 0.26;
-    const radius = state.canopySize * (1.08 - t * 0.86) * state.branchSpread * Number(state.leafSize) * variation;
-    const h = state.height * (0.2 - t * 0.08) * (0.75 + state.leafShape * 0.55);
-    addPineLayer(treeRoot, y, radius, h, leafMats[i % leafMats.length], sides + 2, rand, i + 1);
-  }
-}
-
 function updateMetrics() {
-  let meshes = 0;
-  let tris = 0;
-  treeRoot.traverse((child) => {
-    if (!child.isMesh) return;
-    meshes += 1;
-    const indexCount = child.geometry.index?.count ?? child.geometry.attributes.position.count;
-    tris += Math.round(indexCount / 3);
-  });
+  const { meshes, triangles } = meshStats(treeRoot);
   document.querySelector('#meshCount').textContent = meshes;
-  document.querySelector('#triCount').textContent = tris.toLocaleString();
+  document.querySelector('#triCount').textContent = triangles.toLocaleString();
 }
 
 function syncControls() {
@@ -664,6 +408,8 @@ function regenerate() {
   buildTree();
 }
 
+// Export the asset with plain standard materials, whatever the preview is
+// currently showing, and without the preview-only userData.
 function cleanExportGroup() {
   const clone = treeRoot.clone(true);
   clone.traverse((child) => {

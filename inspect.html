@@ -12,8 +12,15 @@
     <div id="status">Inspector ready. Driven by tools/inspect.js.</div>
     <script type="module">
       import * as THREE from 'three';
-      import { buildTree, presets } from './mcp/generator.js';
       import { diagnose, collect } from './tools/diagnostics.js';
+
+      // ?generator=legacy renders mcp/generator.legacy.js instead, so an older
+      // generator can be measured with today's diagnostics and compared like
+      // for like. tools/inspect.js --baseline sets this up.
+      const legacy = new URLSearchParams(location.search).get('generator') === 'legacy';
+      const { buildTree, presets } = await import(
+        legacy ? './mcp/generator.legacy.js' : './mcp/generator.js'
+      );
 
       const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
       renderer.setPixelRatio(1);
@@ -109,14 +116,14 @@
         const trunkR = bark.length ? Math.max(...bark.map((s) => s.radius)) : 0.4;
 
         if (which === 'root') {
-          return { target: new THREE.Vector3(0, size.y * 0.06, 0), radius: Math.max(0.5, trunkR * 5) };
+          return { target: new THREE.Vector3(0, size.y * 0.05, 0), radius: Math.max(0.35, trunkR * 2.2) };
         }
         if (which === 'junction') {
           // Lowest branch that leaves the trunk — where joins look wrong.
           const off = bark.filter((s) => s.a.length() > trunkR * 0.9 || Math.abs(s.b.x - s.a.x) > 0.2);
           const low = off.sort((p, q) => p.a.y - q.a.y)[0];
           const t = low ? low.a : new THREE.Vector3(0, size.y * 0.45, 0);
-          return { target: t, radius: Math.max(0.7, trunkR * 7) };
+          return { target: t, radius: Math.max(0.45, trunkR * 2.6) };
         }
         if (which === 'tip') {
           const tip = bark.sort((p, q) => q.b.y - p.b.y)[0]?.b ?? new THREE.Vector3(0, size.y * 0.8, 0);

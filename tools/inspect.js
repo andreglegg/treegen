@@ -3,8 +3,11 @@
 // images instead of guessed at. Starts Vite in-process, drives headless
 // Chromium at inspect.html, and writes PNGs plus numeric diagnostics.
 //
-//   npm run inspect                 -> inspect-out/
-//   npm run inspect -- --out=name   -> inspect-out/name/   (e.g. baseline)
+//   npm run inspect                  -> inspect-out/
+//   npm run inspect -- --out=name    -> inspect-out/name/
+//   npm run inspect -- --legacy      -> renders mcp/generator.legacy.js instead,
+//                                       so an old generator can be scored with
+//                                       today's diagnostics
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
 import { promises as fs } from 'node:fs';
@@ -146,7 +149,8 @@ async function main() {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.on('pageerror', (e) => console.error('  page error:', e.message));
 
-  await page.goto(`${url}inspect.html`, { waitUntil: 'load' });
+  const legacy = process.argv.includes('--legacy');
+  await page.goto(`${url}inspect.html${legacy ? '?generator=legacy' : ''}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.inspectorReady === true, null, { timeout: 30000 });
 
   const presets = await page.evaluate(() => window.presets);

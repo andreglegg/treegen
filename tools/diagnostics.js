@@ -69,12 +69,17 @@ function distanceToSegment(p, a, b) {
 export function diagnose(group) {
   const { bark, foliage } = collect(group);
 
-  // A tip is a branch end that no other branch grows out of.
-  const isTip = (end) => !bark.some((o) => o.a.distanceTo(end) < o.radius * 2 + 0.05);
+  // An endpoint is connected when it touches the body of some other piece of
+  // bark — the trunk it grows out of, or a child growing out of it. Testing
+  // against whole segments rather than just their start points matters: a limb
+  // joins the trunk half way up it, nowhere near the trunk's own endpoints.
+  const connected = (p, self) =>
+    bark.some((o) => o !== self && distanceToSegment(p, o.a, o.b) < Math.max(o.radius, 0.04) * 2.2);
+
   const tips = [];
   for (const seg of bark) {
-    if (isTip(seg.b)) tips.push(seg.b);
-    if (isTip(seg.a) && seg.a.y > 0.2) tips.push(seg.a);
+    if (!connected(seg.b, seg)) tips.push(seg.b);
+    if (seg.a.y > 0.2 && !connected(seg.a, seg)) tips.push(seg.a);
   }
 
   // A tip with no leaf mass around it is a stick poking into open air.

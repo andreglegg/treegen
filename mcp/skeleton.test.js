@@ -122,6 +122,18 @@ test('survives every extreme the MCP schema permits', () => {
   }
 });
 
+test('the trunk stays visible at every height', () => {
+  // A crown that reaches the ground turns the tree into a bush. Short trees
+  // are where this bites, because canopySize does not scale with height.
+  for (const height of [3, 4.5, 6.2, 10]) {
+    for (const species of ['round', 'oak', 'acacia', 'willow']) {
+      const skel = buildSkeleton({ ...defaultParams, species, height, canopySize: 3.6 });
+      const lowest = Math.min(...skel.anchors.map((a) => a.p.y - a.radius));
+      assert.ok(lowest > height * 0.22, `${species} @ h=${height}: foliage reaches ${lowest.toFixed(2)}`);
+    }
+  }
+});
+
 test('all presets build', () => {
   for (const [name, params] of Object.entries(presets)) {
     const skel = buildSkeleton({ ...defaultParams, ...params });
