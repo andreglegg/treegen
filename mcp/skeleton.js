@@ -1061,10 +1061,12 @@ function buildPalm(ctx) {
     // frond visibly grows FROM the crown shaft.
     const centre = apex.p.clone().addScaledVector(dir, radius * 0.85);
     // Bare/winter mode: a dead palm keeps short drooping stubs (the collapsed
-    // frond bases) but grows no blades.
+    // frond bases) and sprouts fine dead twigs from them instead of blades —
+    // the same anchor-replaced-by-twigs contract every other species follows.
     const stubEnd = ctx.bare
       ? apex.p.clone().addScaledVector(dir, radius * 0.4).add(new THREE.Vector3(0, -radius * 0.12, 0))
       : centre;
+    const id = branches.length;
     branches.push({
       points: curveBranch(apex.p.clone(), stubEnd, 0.05, 0, 3),
       radius: apex.r * 0.5,
@@ -1073,7 +1075,10 @@ function buildPalm(ctx) {
       parent: -1,
       terminal: true,
     });
-    if (ctx.bare) continue;
+    if (ctx.bare) {
+      sproutTwigs(ctx, id, branches[id].points[branches[id].points.length - 1], dir, apex.r * 0.18, 0);
+      continue;
+    }
 
     anchors.push({
       p: centre,
