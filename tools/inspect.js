@@ -18,9 +18,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outArg = process.argv.find((a) => a.startsWith('--out='));
 const OUT = path.join(ROOT, 'inspect-out', outArg ? outArg.slice(6) : '');
 
-const PRESETS = ['meadow', 'orchard', 'pine', 'oak', 'acacia', 'willow', 'sapling', 'ancient', 'giant'];
+const PRESETS = ['meadow', 'orchard', 'pine', 'oak', 'acacia', 'willow', 'birch', 'poplar', 'palm', 'baobab', 'sapling', 'ancient', 'giant'];
 const SEEDS = [4192, 1327, 3048];
-const SPECIES = ['round', 'oak', 'acacia', 'willow', 'pine'];
+const SPECIES = ['round', 'oak', 'acacia', 'willow', 'pine', 'birch', 'poplar', 'palm', 'baobab'];
 const STYLES = ['clustered', 'angular', 'rounded', 'flat', 'needles'];
 
 // Every numeric param the MCP schema exposes, with the bounds it permits. An

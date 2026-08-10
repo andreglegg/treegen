@@ -10,7 +10,7 @@ import path from 'node:path';
 import { buildTree, meshStats, presets, randomParams } from './generator.js';
 import { exportGlb, exportObj } from './export.js';
 
-const SPECIES = ['round', 'oak', 'acacia', 'willow', 'pine'];
+const SPECIES = ['round', 'oak', 'acacia', 'willow', 'pine', 'birch', 'poplar', 'palm', 'baobab'];
 const LEAF_STYLES = ['clustered', 'angular', 'rounded', 'flat', 'needles'];
 const FORMATS = ['glb', 'obj', 'json'];
 const DEFAULT_OUT = path.resolve(process.cwd(), 'treegen-out');
@@ -55,8 +55,8 @@ const paramShape = {
   leafVariation: z.number().min(0).max(1).optional(),
   detail: z.number().int().min(0).max(2).optional().describe('0 low-poly, 1 game-ready, 2 hero'),
   lean: z.number().min(0).max(0.55).optional(),
-  leafPalette: z.number().int().min(0).max(7).optional(),
-  barkPalette: z.number().int().min(0).max(5).optional(),
+  leafPalette: z.number().int().min(0).max(8).optional(),
+  barkPalette: z.number().int().min(0).max(6).optional(),
 };
 
 server.registerTool(

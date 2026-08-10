@@ -39,9 +39,10 @@ in Node and in the browser.
 
 ## Parameters
 
-Nine presets (`meadow`, `orchard`, `pine`, `oak`, `acacia`, `willow`,
-`sapling`, `ancient`, `giant`) and five species silhouettes (`round`, `oak`,
-`acacia`, `willow`, `pine`). Everything is bounded — see `paramShape` in
+Thirteen presets (`meadow`, `orchard`, `pine`, `oak`, `acacia`, `willow`,
+`birch`, `poplar`, `palm`, `baobab`, `sapling`, `ancient`, `giant`) and nine
+species silhouettes (`round`, `oak`, `acacia`, `willow`, `pine`, `birch`,
+`poplar`, `palm`, `baobab`). Everything is bounded — see `paramShape` in
 `mcp/server.js` for ranges.
 
 `age` (0–1) plays the tree's whole life: `height`/`trunkRadius` state the

@@ -22,6 +22,8 @@ export const leafPalettes = [
   ['#96a64f', '#596f35', '#e2d77d'],
   ['#4b8d88', '#28605c', '#9fcbc2'],
   ['#ba5360', '#742f43', '#eea07e'],
+  // Fresh light birch green — appended; palette indices are public API.
+  ['#a9c86a', '#79a04c', '#e8e08c'],
 ];
 
 export const barkPalettes = [
@@ -31,6 +33,8 @@ export const barkPalettes = [
   ['#b58254', '#7d5134'],
   ['#584434', '#31261d'],
   ['#73735e', '#48483d'],
+  // Birch white bark — appended; palette indices are public API.
+  ['#e8e4da', '#3a3733'],
 ];
 
 export const presets = {
@@ -40,6 +44,10 @@ export const presets = {
   oak: { species: 'oak', seed: 3048, height: 6.4, trunkRadius: 0.58, branchCount: 11, branchSpread: 1.5, canopySize: 2.5, leafDensity: 44, leafShape: 0.42, leafStyle: 'angular', leafSize: 1.0, leafVariation: 0.6, detail: 1, lean: 0.1, leafPalette: 5, barkPalette: 4 },
   acacia: { species: 'acacia', seed: 6291, height: 7.0, trunkRadius: 0.4, branchCount: 8, branchSpread: 1.7, canopySize: 2.6, leafDensity: 30, leafShape: 0.3, leafStyle: 'clustered', leafSize: 1.15, leafVariation: 0.45, detail: 1, lean: 0.2, leafPalette: 6, barkPalette: 2 },
   willow: { species: 'willow', seed: 8174, height: 6.6, trunkRadius: 0.4, branchCount: 10, branchSpread: 1.4, canopySize: 2.3, leafDensity: 46, leafShape: 0.75, leafStyle: 'clustered', leafSize: 0.82, leafVariation: 0.6, detail: 1, lean: 0.12, leafPalette: 1, barkPalette: 5 },
+  birch: { species: 'birch', seed: 5521, height: 7.5, trunkRadius: 0.24, branchCount: 9, branchSpread: 0.95, canopySize: 1.9, leafDensity: 26, leafShape: 0.55, leafStyle: 'clustered', leafSize: 0.8, leafVariation: 0.6, detail: 1, lean: 0.08, leafPalette: 8, barkPalette: 6 },
+  poplar: { species: 'poplar', seed: 3390, height: 10.5, trunkRadius: 0.32, branchCount: 12, branchSpread: 0.6, canopySize: 2.6, leafDensity: 34, leafShape: 0.6, leafStyle: 'clustered', leafSize: 0.85, leafVariation: 0.4, detail: 1, lean: 0.03, leafPalette: 1, barkPalette: 2 },
+  palm: { species: 'palm', seed: 7040, height: 8, trunkRadius: 0.3, branchCount: 10, branchSpread: 1.5, canopySize: 2.4, leafDensity: 20, leafShape: 0.5, leafStyle: 'flat', leafSize: 1.1, leafVariation: 0.35, detail: 1, lean: 0.32, leafPalette: 1, barkPalette: 1 },
+  baobab: { species: 'baobab', seed: 6114, height: 9, trunkRadius: 1.15, branchCount: 8, branchSpread: 1.1, canopySize: 2.3, leafDensity: 14, leafShape: 0.45, leafStyle: 'clustered', leafSize: 0.85, leafVariation: 0.5, detail: 1, lean: 0.05, leafPalette: 0, barkPalette: 3 },
   // Age range. Allometry from the references: saplings run slender
   // (height/diameter 40+) with a narrow upswept crown covering most of the
   // stem; ancients go squat (H/D ~15) with a retrenched crown wider than
@@ -416,6 +424,20 @@ export function buildTree(params = {}) {
       return;
     }
 
+    if (anchor.frond) {
+      // Palm frond: one elongated, drooping flat blade. Local X is the
+      // frond's length axis; Euler order XYZ applies the Z pitch first (the
+      // droop, about the blade's own axis) then the Y yaw out to its azimuth,
+      // which is exactly the skeleton's `dir`.
+      const mesh = new THREE.Mesh(blob, toneFor(anchor.exposure));
+      mesh.name = `leaf_cluster_${i}`;
+      mesh.position.copy(anchor.p);
+      mesh.scale.set(anchor.radius, anchor.radius * 0.16, anchor.radius * 0.34);
+      mesh.rotation.set(0, anchor.spin, -anchor.tilt);
+      root.add(mesh);
+      return;
+    }
+
     const mesh = new THREE.Mesh(blob, toneFor(anchor.exposure));
     mesh.name = `leaf_cluster_${i}`;
     mesh.position.copy(anchor.p);
@@ -442,7 +464,7 @@ export function buildTree(params = {}) {
     const accentBlob = leafGeometry(s.leafStyle, detail - 1);
     let accentIndex = anchors.length;
     anchors.forEach((anchor) => {
-      if (anchor.skirt || (anchor.width ?? 1) < 1) return; // not on willow strands
+      if (anchor.skirt || anchor.frond || (anchor.width ?? 1) < 1) return; // not on strands/fronds
       const pick = (Math.sin(anchor.spin * 12.9898) + 1) / 2; // hash of existing noise
       if (pick > frac) return;
 

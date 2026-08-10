@@ -49,6 +49,10 @@ document.querySelector('#app').innerHTML = `
             <button data-species="acacia">Acacia</button>
             <button data-species="willow">Willow</button>
             <button data-species="pine">Pine</button>
+            <button data-species="birch">Birch</button>
+            <button data-species="poplar">Poplar</button>
+            <button data-species="palm">Palm</button>
+            <button data-species="baobab">Baobab</button>
           </div>
           <label class="field">
             <span class="field-label">Seed <span class="field-output" data-out="seed"></span></span>
@@ -146,6 +150,10 @@ document.querySelector('#app').innerHTML = `
             <button class="preset-button" data-preset="oak"><span>Old Oak</span><small>Wide limbs, dense crown</small></button>
             <button class="preset-button" data-preset="acacia"><span>Sunset Acacia</span><small>Flat umbrella canopy</small></button>
             <button class="preset-button" data-preset="willow"><span>Riverside Willow</span><small>Soft hanging foliage</small></button>
+            <button class="preset-button" data-preset="birch"><span>Silver Birch</span><small>White bark, airy crown</small></button>
+            <button class="preset-button" data-preset="poplar"><span>Lombardy Poplar</span><small>Slender green column</small></button>
+            <button class="preset-button" data-preset="palm"><span>Coconut Palm</span><small>Leaning trunk, frond rosette</small></button>
+            <button class="preset-button" data-preset="baobab"><span>Baobab</span><small>Barrel trunk, root-like crown</small></button>
             <button class="preset-button" data-preset="sapling"><span>Young Sapling</span><small>Slender and upswept</small></button>
             <button class="preset-button" data-preset="ancient"><span>Ancient Oak</span><small>Squat, gnarled veteran</small></button>
             <button class="preset-button" data-preset="giant"><span>Forest Giant</span><small>42m emergent, buttressed</small></button>

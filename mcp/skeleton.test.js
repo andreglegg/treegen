@@ -47,7 +47,7 @@ test('every branch tip carries foliage', () => {
 
 test('broadleaf foliage count honours leafDensity', () => {
   for (const leafDensity of [8, 21, 46, 64]) {
-    for (const species of ['round', 'oak', 'acacia', 'willow']) {
+    for (const species of ['round', 'oak', 'acacia', 'willow', 'birch', 'poplar', 'baobab']) {
       const skel = make({ species, leafDensity });
       assert.equal(skel.anchors.length, leafDensity, `${species} @ ${leafDensity}`);
     }
@@ -181,6 +181,76 @@ test('giants get buttress flanges and columnar taper', () => {
   assert.ok(midR / upperFlareFree > 0.7, `giant trunk should be near-columnar (${(midR / upperFlareFree).toFixed(2)})`);
   const normal = buildSkeleton({ ...defaultParams, species: 'round', age: 0.5 });
   assert.equal(normal.buttress, null, 'ordinary mature tree should have no buttress');
+});
+
+test('palm is a bare trunk with a frond rosette at the apex', () => {
+  const skel = make({ species: 'palm' });
+  // 7-12 fronds, one stub branch each, no recursive branching.
+  assert.ok(skel.anchors.length >= 7 && skel.anchors.length <= 12, `frond count ${skel.anchors.length}`);
+  assert.equal(skel.branches.length, skel.anchors.length, 'palm should have exactly one stub per frond');
+  assert.ok(skel.branches.every((b) => b.terminal && b.parent === -1), 'palm stubs must not branch');
+  assert.ok(skel.anchors.every((a) => a.frond), 'every palm mass is a frond');
+  // The rosette sits at the apex: every frond centre in the top quarter.
+  const top = skel.spine[skel.spine.length - 1].p.y;
+  assert.ok(skel.anchors.every((a) => a.p.y > top * 0.75), 'fronds should crowd the apex');
+  // The trunk keeps a columnar top for the rosette to sit on.
+  assert.ok(skel.spine[skel.spine.length - 1].r > skel.spine[0].r * 0.3, 'palm trunk should stay columnar');
+});
+
+test('poplar is a fastigiate column', () => {
+  const width = (species) => {
+    const skel = make({ species });
+    const box = new THREE.Box3();
+    for (const a of skel.anchors) {
+      const vertical = a.radius * (a.aspect ?? 1);
+      box.expandByPoint(new THREE.Vector3(a.p.x + a.radius, a.p.y + vertical, a.p.z + a.radius));
+      box.expandByPoint(new THREE.Vector3(a.p.x - a.radius, a.p.y - vertical, a.p.z - a.radius));
+    }
+    const size = box.getSize(new THREE.Vector3());
+    return Math.max(size.x, size.z) / (size.y || 1);
+  };
+  assert.ok(width('poplar') < 0.62, `poplar crown not columnar (${width('poplar').toFixed(2)})`);
+  assert.ok(width('poplar') < width('round') * 0.55, 'poplar should be far narrower than a round tree');
+  // The column hugs the trunk from low on the stem.
+  const skel = make({ species: 'poplar' });
+  const low = Math.min(...skel.anchors.map((a) => a.p.y));
+  assert.ok(low < skel.params.height * 0.45, 'poplar foliage should start low');
+});
+
+test('baobab keeps a barrel trunk and short fat leaders', () => {
+  const skel = make({ species: 'baobab', trunkRadius: 1.15, height: 9, lean: 0 });
+  // Mid-trunk stays as thick as the flare-free lower shaft (barrel), where a
+  // normal trunk has already tapered well away.
+  const rAt = (s, t) => s.spine[Math.min(s.spine.length - 1, Math.round(t * (s.spine.length - 1)))].r;
+  const barrel = rAt(skel, 0.7) / rAt(skel, 0.4);
+  assert.ok(barrel > 0.9, `baobab should stay barrel-thick up the shaft (${barrel.toFixed(2)})`);
+  const oak = make({ species: 'oak', trunkRadius: 1.15, height: 9, lean: 0 });
+  assert.ok(barrel > (rAt(oak, 0.7) / rAt(oak, 0.4)) * 1.1, 'baobab must taper less than an oak');
+  // Root-like crown: a cluster of leaders, each markedly shorter than the trunk.
+  const leaders = skel.branches.filter((b) => b.leader);
+  assert.ok(leaders.length >= 4, 'baobab should fork into a cluster of leaders');
+  for (const b of leaders) {
+    const len = b.points[0].distanceTo(b.points[b.points.length - 1]);
+    assert.ok(len < skel.params.height * 0.45, `leader too long (${len.toFixed(2)})`);
+    assert.ok(b.radius > skel.params.trunkRadius * 0.4, 'baobab leaders should be fat');
+  }
+});
+
+test('birch carries a small crown high on a slim trunk', () => {
+  const skel = make({ species: 'birch', height: 7.5, trunkRadius: 0.24 });
+  const low = Math.min(...skel.anchors.map((a) => a.p.y - a.radius));
+  assert.ok(low > skel.params.height * 0.45, `birch crown should start high (${low.toFixed(2)})`);
+  const spanOf = (s) => {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const a of s.anchors) {
+      min = Math.min(min, a.p.x - a.radius, a.p.z - a.radius);
+      max = Math.max(max, a.p.x + a.radius, a.p.z + a.radius);
+    }
+    return max - min;
+  };
+  const oak = make({ species: 'oak' });
+  assert.ok(spanOf(skel) < spanOf(oak) * 0.8, 'birch crown should be airier and smaller than an oak');
 });
 
 test('all presets build', () => {

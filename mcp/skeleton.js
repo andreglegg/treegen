@@ -73,6 +73,44 @@ export const SPECIES_PROFILES = {
     crownY: 0.6, rx: 0.9, ry: 1.2, exponent: 2, crownStart: 0.26,
     rise: -0.25, droop: 0.1, curtain: 0, lobe: 0, flatBottom: 0, leafAspect: 1,
   },
+  birch: {
+    // Betula pendula: a slim pale trunk carrying a small, airy crown that
+    // starts high — over half the tree is visible stem — with branches that
+    // sweep gently upward. Small clustered leaf masses keep it light; a dense
+    // dome would read as a round tree on a stick.
+    crownY: 0.79, rx: 0.54, ry: 0.46, exponent: 2.2, crownStart: 0.6,
+    rise: 0.78, droop: 0.06, curtain: 0, lobe: 0.14, flatBottom: 0, leafAspect: 1.12,
+  },
+  poplar: {
+    // Lombardy poplar: fastigiate. The crown is a narrow, tall ellipsoid
+    // hugging the trunk (rx a third of ry), the first branches leave the stem
+    // low, and every branch is steeply upswept — negative droop keeps even the
+    // tips rising. The silhouette is a green column, not a lollipop.
+    columnar: true,
+    crownY: 0.54, rx: 0.33, ry: 1.62, exponent: 2.4, crownStart: 0.14,
+    rise: 1.3, droop: -0.22, curtain: 0, lobe: 0.05, flatBottom: 0, leafAspect: 1.35,
+    // Each mass is narrowed as well as stretched: fat blobs on a thin hull
+    // would bulge the column back out to a lollipop.
+    leafWidth: 0.76,
+  },
+  palm: {
+    // Coconut palm — its own build path (buildPalm), like the conifer whorls
+    // are for pine. A bare leaning trunk with NO branching, capped by a
+    // rosette of 7-12 fronds; tipRadius keeps the columnar top the rosette
+    // sits on instead of tapering to a spike.
+    builder: 'palm', tipRadius: 0.58,
+    crownY: 0.97, rx: 0.9, ry: 0.4, exponent: 2, crownStart: 0.95,
+    rise: 0, droop: 0.3, curtain: 0, lobe: 0, flatBottom: 0, leafAspect: 0.5,
+  },
+  baobab: {
+    // Adansonia: a water-storing barrel of a trunk (see the `barrel` hook in
+    // buildSpine) cut off abruptly into a cluster of short, fat, root-like
+    // leaders — the "upside-down tree" — carrying a tiny sparse crown.
+    barrel: 0.4,
+    crownY: 0.84, rx: 0.78, ry: 0.26, exponent: 2.6, crownStart: 0.7,
+    rise: 0.85, droop: 0.05, curtain: 0, lobe: 0.12, flatBottom: 0.3, leafAspect: 0.75,
+    split: { at: 0.58, count: 6, rise: 0.68, spread: 0.8 },
+  },
 };
 
 export function rng(seed) {
@@ -171,9 +209,10 @@ function buildSpine(s, rand, profile, fx) {
   const lean = Number(s.lean);
   const phase = rand() * Math.PI * 2;
   const wobble = (0.4 + rand() * 0.6) * s.height * 0.035 * fx.wobble;
-  // Conifers keep a visible leader spike; broadleaf trunks taper away to
-  // nothing so no bare stick pokes out of the top of the crown.
-  const tipRadius = s.species === 'pine' ? 0.14 : 0.04;
+  // Conifers keep a visible leader spike; palms keep the thick columnar top
+  // their frond rosette sits on; broadleaf trunks taper away to nothing so no
+  // bare stick pokes out of the top of the crown.
+  const tipRadius = profile.tipRadius ?? (s.species === 'pine' ? 0.14 : 0.04);
 
   const spine = [];
   for (let i = 0; i < samples; i += 1) {
@@ -183,6 +222,16 @@ function buildSpine(s, rand, profile, fx) {
     const sway = Math.sin(t * Math.PI * 1.3 + phase) * wobble * t;
 
     let radius = s.trunkRadius * ((1 - t) ** (0.85 * fx.taperPower) * (1 - tipRadius) + tipRadius);
+    // Profile-driven trunk shape hook: `barrel` (baobab) replaces the conical
+    // taper with a water-storage barrel — near-cylindrical shaft, a bulge
+    // around mid-height, and an abrupt neck just below the crown instead of a
+    // gradual structural taper.
+    if (profile.barrel) {
+      const shaft = lerp(1, 0.74, t);
+      const bulge = 1 + profile.barrel * Math.sin(clamp(t / 0.75, 0, 1) * Math.PI) ** 1.2;
+      const neck = t > 0.5 ? lerp(1, 0.42, ((t - 0.5) / 0.5) ** 1.1) : 1;
+      radius = s.trunkRadius * shaft * bulge * neck;
+    }
     // Root flare, spread over the bottom quarter so it spans several rings of
     // the tube. A narrower zone lands on a single sample and renders as a
     // ledge — the trunk looks like it is wearing a boot.
@@ -292,12 +341,19 @@ export function buildSkeleton(params) {
   // generator only appears to be random.
   const vary = (amount) => 1 + (rand() - 0.5) * amount;
   const rx = canopy * profile.rx * lerp(0.75, 1.15, clamp(spread / 2.2, 0, 1)) * vary(0.26) * fx.rxMult;
-  const ry = canopy * profile.ry * vary(0.26) * fx.ryMult;
+  let ry = canopy * profile.ry * vary(0.26) * fx.ryMult;
   const crownCentre = spineAt(spine, clamp(profile.crownY + (rand() - 0.5) * 0.07, 0.3, 0.95)).p.clone();
+  // A columnar crown is tall by definition, but its foot must not scrape the
+  // ground — clamp ry so the lowest foliage stays above ~12% of height.
+  if (profile.columnar) ry = Math.min(ry, (crownCentre.y - Number(s.height) * 0.12) / 0.92);
   if (profile.split) spine = trimSpine(spine, Number(s.height) * profile.split.at);
   // Curtain species trim deeper: their masses are narrow strands on the hull,
-  // so a trunk reaching the apex pokes out between them as a bare twig.
-  else if (s.species !== 'pine') spine = trimSpine(spine, crownCentre.y + ry * (profile.curtain ? 0.5 : 0.85));
+  // so a trunk reaching the apex pokes out between them as a bare twig. Pines
+  // keep their leader spike; palms keep the full trunk — the rosette sits ON
+  // the apex.
+  else if (s.species !== 'pine' && profile.builder !== 'palm') {
+    spine = trimSpine(spine, crownCentre.y + ry * (profile.curtain ? 0.5 : 0.85));
+  }
 
   const branches = [];
   const anchors = [];
@@ -306,6 +362,8 @@ export function buildSkeleton(params) {
 
   if (s.species === 'pine') {
     buildConifer({ s, rand, spine, profile, branches, anchors, crownCentre });
+  } else if (profile.builder === 'palm') {
+    buildPalm({ s, rand, spine, profile, branches, anchors });
   } else {
     buildBroadleaf({
       s, rand, spine, profile, branches, anchors,
@@ -317,7 +375,9 @@ export function buildSkeleton(params) {
   // Mature and old trees only — saplings haven't earned them — and drawn LAST
   // so the extra rand() calls don't shift any of the randomness above (the
   // same seed keeps the same tree, plus roots).
-  if (fx.age >= 0.35 && Number(s.detail) >= 1) {
+  // Palms are excluded: a palm's base is a smooth column, and root spurs on it
+  // read as tentacles.
+  if (fx.age >= 0.35 && Number(s.detail) >= 1 && profile.builder !== 'palm') {
     const at = spineAt(spine, 0.04);
     const count = 3 + (fx.giant > 0.3 ? 1 : 0);
     for (let i = 0; i < count; i += 1) {
@@ -429,15 +489,30 @@ function buildBroadleaf(ctx) {
 
   // A flat-bottomed disc keeps every target on or above its equator — one
   // sagging pad under an acacia's umbrella reads as detached, not natural.
-  const targets = crownDirections(primaries, rand, profile.flatBottom > 0.4 ? 0 : -0.5).map((dir) => {
-    const r = hullRadius(dir, rx, ry, rx, profile.exponent, profile.lobe);
-    const p = crownCentre.clone().addScaledVector(dir, r);
-    if (profile.flatBottom) {
-      const floor = crownCentre.y - ry * (1 - profile.flatBottom);
-      p.y = Math.max(p.y, floor);
-    }
-    return p;
-  });
+  //
+  // Columnar (fastigiate) crowns cannot use direction sampling at all: on a
+  // tall thin ellipsoid nearly every direction exits through the waist, piling
+  // targets at mid-height and turning the column into a belt. Sample by HEIGHT
+  // instead — bottom to top with golden-angle azimuths — so index order still
+  // means "lowest target attaches lowest on the trunk".
+  const targets = profile.columnar
+    ? Array.from({ length: primaries }, (_, i) => {
+        const y = lerp(-0.9, 0.94, (i + 0.5) / primaries);
+        const rr = rx * Math.max(0, 1 - Math.abs(y) ** profile.exponent) ** (1 / profile.exponent);
+        const theta = GOLDEN * i + rand() * 0.9;
+        return crownCentre
+          .clone()
+          .add(new THREE.Vector3(Math.cos(theta) * rr, y * ry, Math.sin(theta) * rr));
+      })
+    : crownDirections(primaries, rand, profile.flatBottom > 0.4 ? 0 : -0.5).map((dir) => {
+        const r = hullRadius(dir, rx, ry, rx, profile.exponent, profile.lobe);
+        const p = crownCentre.clone().addScaledVector(dir, r);
+        if (profile.flatBottom) {
+          const floor = crownCentre.y - ry * (1 - profile.flatBottom);
+          p.y = Math.max(p.y, floor);
+        }
+        return p;
+      });
 
   // With leaders, branches hang off whichever leader is heading their way.
   // Attachment order is decided per leader, not globally: every leader must
@@ -759,6 +834,67 @@ function buildConifer(ctx) {
       tilt: 0,
       skirt: true,
       height: Math.max(0.4, s.height * (0.19 - t * 0.07) * (0.7 + Number(s.leafShape) * 0.6)),
+    });
+  }
+}
+
+/**
+ * Palms are a rosette, not a hierarchy: the trunk runs bare all the way up and
+ * 7-12 fronds fan out from its apex, each meshed by the generator as a single
+ * elongated, drooping flat blade (`frond` anchors). Every frond still sits on
+ * a short stub branch that starts ON the trunk centerline, so the "foliage
+ * lives at a branch tip" invariant — and the diagnostics enforcing it — hold
+ * with no special case. There is no recursive branching at all.
+ */
+function buildPalm(ctx) {
+  const { s, rand, spine, branches, anchors } = ctx;
+  const apex = spine[spine.length - 1];
+  const count = clamp(Math.round(Number(s.branchCount) * 0.9), 7, 12);
+  const phase = rand() * Math.PI * 2;
+  // Fronds scale with the tree, not canopySize alone — a coconut palm's crown
+  // is roughly half as wide as the tree is tall, whatever the sliders say.
+  const frondLen = clamp(
+    Number(s.canopySize) * 1.05 * Number(s.leafSize),
+    s.height * 0.2,
+    s.height * 0.5
+  );
+
+  for (let i = 0; i < count; i += 1) {
+    const a = phase + (i / count) * Math.PI * 2 + (rand() - 0.5) * 0.35;
+    // Alternate fronds droop harder, so the rosette reads as layered — an
+    // upper crown of rising blades over a skirt of falling ones — instead of
+    // a flat star. Radians below horizontal.
+    const tilt = 0.12 + rand() * 0.4 + (i % 2) * 0.38;
+    const dir = new THREE.Vector3(
+      Math.cos(a) * Math.cos(tilt),
+      -Math.sin(tilt),
+      Math.sin(a) * Math.cos(tilt)
+    );
+
+    const radius = frondLen * 0.5 * (0.88 + rand() * 0.24);
+    // The frond blade is centred at the stub's tip; placing that tip most of a
+    // half-length out leaves the blade's inner end at the trunk apex, so the
+    // frond visibly grows FROM the crown shaft.
+    const centre = apex.p.clone().addScaledVector(dir, radius * 0.85);
+    branches.push({
+      points: curveBranch(apex.p.clone(), centre, 0.05, 0, 3),
+      radius: apex.r * 0.5,
+      endRadius: apex.r * 0.18,
+      depth: 0,
+      parent: -1,
+      terminal: true,
+    });
+
+    anchors.push({
+      p: centre,
+      radius,
+      aspect: 0.32,
+      exposure: clamp(0.55 + dir.dot(SUN) * 0.45, 0, 1),
+      // The generator's frond path aligns the blade's long axis with `dir`:
+      // yaw -a around Y, then pitch `tilt` down about the blade's own Z.
+      spin: -a,
+      tilt,
+      frond: true,
     });
   }
 }
