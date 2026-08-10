@@ -366,12 +366,17 @@ function buildBroadleaf(ctx) {
 
     let at;
     let parent = -1;
+    let continues = false;
     if (leaders.length) {
       const leader = pickLeader(target);
       const along = alongFor.get(i) ?? 1;
       const idx = clamp(Math.round(along * (leader.points.length - 1)), 1, leader.points.length - 1);
       at = { p: leader.points[idx], r: leader.radius };
       parent = leader.id;
+      // The branch at the leader's very tip is its continuation — flush, full
+      // cross-section — so the leader flows into the crown instead of ending
+      // in a capped stump with a thinner branch glued on.
+      continues = along === 1;
     } else {
       // Primaries leave the trunk between crownStart and just below the top,
       // ordered so the outermost targets attach lowest — the way real limbs do.
@@ -383,8 +388,11 @@ function buildBroadleaf(ctx) {
       at = spineAt(spine, t);
     }
 
+    // Side attachments start well INSIDE the parent so the tube emerges
+    // through its flank; offsetting to the surface left the start ring hanging
+    // partly in air. Continuations start exactly on the axis.
     const outward = new THREE.Vector3(target.x - at.p.x, 0, target.z - at.p.z).normalize();
-    const start = at.p.clone().addScaledVector(outward, at.r * 0.6);
+    const start = at.p.clone().addScaledVector(outward, continues ? 0 : at.r * 0.25);
 
     grow({
       ...ctx,
@@ -393,7 +401,7 @@ function buildBroadleaf(ctx) {
       quota: quotas[i],
       depth: 0,
       maxDepth,
-      radius: at.r * (leaders.length ? 0.7 : 0.52),
+      radius: at.r * (continues ? 0.96 : leaders.length ? 0.7 : 0.52),
       parent,
     });
   });
@@ -485,11 +493,19 @@ function grow(ctx) {
     return;
   }
 
-  // Da Vinci's rule: the children's cross-sections sum to the parent's, so
-  // joints look load-bearing rather than arbitrary.
+  // A limb does not end where its children begin — it CONTINUES. One child is
+  // the continuation: it starts flush at the tip, keeps almost the parent's
+  // cross-section, and aims close to the parent's own target. The others are
+  // side shoots that emerge from the parent's flank a sample before the tip,
+  // thinner (roughly the Da Vinci residual of the cross-section the
+  // continuation kept). Splitting the radius evenly among equal children left
+  // a capped stump with twigs glued to it at every junction — geometrically
+  // connected, visually broken.
   const kids = quota >= 3 && rand() > 0.45 ? 3 : 2;
-  const childRadius = endRadius / Math.sqrt(kids);
-  const shares = splitQuota(quota, kids, rand);
+  const shares = splitQuota(quota, kids, rand).sort((a, b) => b - a);
+  const contRadius = endRadius * 0.92;
+  const sideRadius = Math.max(endRadius * 0.55, 0.012);
+  const flank = points[points.length - 2];
 
   // Children aim at points scattered around the parent's target, further out.
   const axis = new THREE.Vector3().subVectors(target, start).normalize();
@@ -499,18 +515,20 @@ function grow(ctx) {
 
   for (let k = 0; k < kids; k += 1) {
     if (shares[k] === 0) continue;
+    const isCont = k === 0;
     const a = (k / kids) * Math.PI * 2 + rand() * 1.4;
+    const spread2 = scatter * (isCont ? 0.3 : 1);
     const jitter = side
       .clone()
-      .multiplyScalar(Math.cos(a) * scatter)
-      .addScaledVector(up, Math.sin(a) * scatter * 0.7);
+      .multiplyScalar(Math.cos(a) * spread2)
+      .addScaledVector(up, Math.sin(a) * spread2 * 0.7);
     grow({
       ...ctx,
-      start: tip.clone(),
+      start: (isCont ? tip : flank).clone(),
       target: target.clone().add(jitter),
       quota: shares[k],
       depth: depth + 1,
-      radius: childRadius,
+      radius: isCont ? contRadius : sideRadius,
       parent: id,
     });
   }

@@ -91,6 +91,18 @@ function sheetSpecs(presets) {
       ],
     },
     {
+      file: 'canopy.png',
+      title: 'Branch web under the canopy',
+      subtitle: 'inside the crown where stump joints and floating limbs show — margin <1 zooms past the fitted distance',
+      cols: 4,
+      cellW: 440,
+      cellH: 450,
+      cells: PRESETS.flatMap((p) => [
+        cell(`${p} · near`, base(p), { view: { azimuth: 35, elevation: 10, margin: 0.42 } }),
+        cell(`${p} · far side`, base(p), { view: { azimuth: 215, elevation: 8, margin: 0.42 } }),
+      ]),
+    },
+    {
       file: 'closeups.png',
       title: 'Closeups',
       subtitle: 'where defects hide: root flare, branch joins, branch tips, crown edge',
