@@ -18,7 +18,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outArg = process.argv.find((a) => a.startsWith('--out='));
 const OUT = path.join(ROOT, 'inspect-out', outArg ? outArg.slice(6) : '');
 
-const PRESETS = ['meadow', 'orchard', 'pine', 'oak', 'acacia', 'willow'];
+const PRESETS = ['meadow', 'orchard', 'pine', 'oak', 'acacia', 'willow', 'sapling', 'ancient', 'giant'];
 const SEEDS = [4192, 1327, 3048];
 const SPECIES = ['round', 'oak', 'acacia', 'willow', 'pine'];
 const STYLES = ['clustered', 'angular', 'rounded', 'flat', 'needles'];
@@ -27,11 +27,12 @@ const STYLES = ['clustered', 'angular', 'rounded', 'flat', 'needles'];
 // agent is allowed to ask for these values, so degenerate output at either end
 // is a real bug — this is what params.png sweeps.
 const RANGES = {
-  height: [3, 10],
-  trunkRadius: [0.18, 0.9],
+  age: [0, 1],
+  height: [2, 50],
+  trunkRadius: [0.15, 2.5],
   branchCount: [4, 18],
   branchSpread: [0.45, 2.2],
-  canopySize: [0.9, 3.6],
+  canopySize: [0.9, 8],
   leafDensity: [8, 64],
   leafShape: [0.15, 1],
   leafSize: [0.45, 1.7],

@@ -111,8 +111,8 @@ test('different seeds produce different trees', () => {
 
 test('survives every extreme the MCP schema permits', () => {
   const ranges = {
-    height: [3, 10], trunkRadius: [0.18, 0.9], branchCount: [4, 18],
-    branchSpread: [0.45, 2.2], canopySize: [0.9, 3.6], leafDensity: [8, 64],
+    age: [0, 1], height: [2, 50], trunkRadius: [0.15, 2.5], branchCount: [4, 18],
+    branchSpread: [0.45, 2.2], canopySize: [0.9, 8], leafDensity: [8, 64],
     leafShape: [0.15, 1], leafSize: [0.45, 1.7], leafVariation: [0, 1],
     lean: [0, 0.55], detail: [0, 2],
   };
@@ -139,6 +139,37 @@ test('the trunk stays visible at every height', () => {
       assert.ok(lowest > height * 0.22, `${species} @ h=${height}: foliage reaches ${lowest.toFixed(2)}`);
     }
   }
+});
+
+test('age produces the allometry it claims', () => {
+  const measure = (age) => {
+    const skel = buildSkeleton({ ...defaultParams, species: 'oak', age });
+    const box = new THREE.Box3();
+    for (const a of skel.anchors) {
+      box.expandByPoint(new THREE.Vector3(a.p.x + a.radius, a.p.y, a.p.z + a.radius));
+      box.expandByPoint(new THREE.Vector3(a.p.x - a.radius, a.p.y, a.p.z - a.radius));
+    }
+    const size = box.getSize(new THREE.Vector3());
+    return { width: Math.max(size.x, size.z), baseR: skel.spine[0].r };
+  };
+  const young = measure(0.05);
+  const old = measure(1);
+  assert.ok(old.width > young.width * 1.3, 'old crown should be much wider than young');
+  assert.ok(old.baseR > young.baseR * 1.2, 'old base should flare more than young');
+  // Saplings are too young to fork.
+  const sapling = buildSkeleton({ ...defaultParams, species: 'oak', age: 0.1 });
+  assert.ok(!sapling.branches.some((b) => b.leader), 'sapling should not have forked leaders');
+});
+
+test('giants get buttress flanges and columnar taper', () => {
+  const giant = buildSkeleton({ ...defaultParams, species: 'pine', age: 0.85, height: 42, trunkRadius: 1.9 });
+  assert.ok(giant.buttress, 'tall old tree should have buttress data');
+  // Columnar: mid-trunk radius stays a large fraction of the base (flare zone excluded).
+  const midR = giant.spine[Math.floor(giant.spine.length / 2)].r;
+  const upperFlareFree = giant.spine[Math.floor(giant.spine.length * 0.3)].r;
+  assert.ok(midR / upperFlareFree > 0.7, `giant trunk should be near-columnar (${(midR / upperFlareFree).toFixed(2)})`);
+  const normal = buildSkeleton({ ...defaultParams, species: 'round', age: 0.5 });
+  assert.equal(normal.buttress, null, 'ordinary mature tree should have no buttress');
 });
 
 test('all presets build', () => {

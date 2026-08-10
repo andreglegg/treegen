@@ -39,9 +39,19 @@ in Node and in the browser.
 
 ## Parameters
 
-Six presets (`meadow`, `orchard`, `pine`, `oak`, `acacia`, `willow`) and five
-species silhouettes (`round`, `oak`, `acacia`, `willow`, `pine`). Everything is
-bounded — see `paramShape` in `mcp/server.js` for ranges.
+Nine presets (`meadow`, `orchard`, `pine`, `oak`, `acacia`, `willow`,
+`sapling`, `ancient`, `giant`) and five species silhouettes (`round`, `oak`,
+`acacia`, `willow`, `pine`). Everything is bounded — see `paramShape` in
+`mcp/server.js` for ranges.
+
+`age` (0–1) drives morphology through curves fitted from tree-allometry
+research: 0 is a slender upswept sapling too young to fork, 0.5 reproduces the
+mature look, 1 is a squat veteran with heavy flare, gnarl, drooping limbs, and
+a retrenched crown wider than tall. `height` runs 2–50m; above ~15m the trunk
+blends toward giant proportions — near-columnar shaft, stronger basal flare,
+and plank buttress flanges (a star cross-section that rounds out partway up),
+the cues that make a big tree read as *giant* instead of "small tree,
+enlarged".
 
 `detail` drives the triangle budget, at the generator's default foliage density:
 

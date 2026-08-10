@@ -40,9 +40,17 @@ export const presets = {
   oak: { species: 'oak', seed: 3048, height: 6.4, trunkRadius: 0.58, branchCount: 11, branchSpread: 1.5, canopySize: 2.5, leafDensity: 44, leafShape: 0.42, leafStyle: 'angular', leafSize: 1.0, leafVariation: 0.6, detail: 1, lean: 0.1, leafPalette: 5, barkPalette: 4 },
   acacia: { species: 'acacia', seed: 6291, height: 7.0, trunkRadius: 0.4, branchCount: 8, branchSpread: 1.7, canopySize: 2.6, leafDensity: 30, leafShape: 0.3, leafStyle: 'clustered', leafSize: 1.15, leafVariation: 0.45, detail: 1, lean: 0.2, leafPalette: 6, barkPalette: 2 },
   willow: { species: 'willow', seed: 8174, height: 6.6, trunkRadius: 0.4, branchCount: 10, branchSpread: 1.4, canopySize: 2.3, leafDensity: 46, leafShape: 0.75, leafStyle: 'clustered', leafSize: 0.82, leafVariation: 0.6, detail: 1, lean: 0.12, leafPalette: 1, barkPalette: 5 },
+  // Age range. Allometry from the references: saplings run slender
+  // (height/diameter 40+) with a narrow upswept crown covering most of the
+  // stem; ancients go squat (H/D ~15) with a retrenched crown wider than
+  // tall; giants keep a near-columnar shaft, a high bare trunk, buttress
+  // flanges, and few but huge foliage masses.
+  sapling: { species: 'round', seed: 2451, age: 0.1, height: 3.4, trunkRadius: 0.19, branchCount: 6, branchSpread: 0.8, canopySize: 1.25, leafDensity: 12, leafShape: 0.7, leafStyle: 'clustered', leafSize: 0.9, leafVariation: 0.45, detail: 1, lean: 0.1, leafPalette: 1, barkPalette: 0 },
+  ancient: { species: 'oak', seed: 9218, age: 1, height: 8.5, trunkRadius: 1.15, branchCount: 13, branchSpread: 1.8, canopySize: 3.4, leafDensity: 48, leafShape: 0.45, leafStyle: 'angular', leafSize: 1.05, leafVariation: 0.7, detail: 1, lean: 0.16, leafPalette: 5, barkPalette: 2 },
+  giant: { species: 'pine', seed: 5107, age: 0.85, height: 42, trunkRadius: 1.9, branchCount: 14, branchSpread: 1.2, canopySize: 7, leafDensity: 36, leafShape: 0.7, leafStyle: 'needles', leafSize: 1.1, leafVariation: 0.45, detail: 1, lean: 0.03, leafPalette: 1, barkPalette: 4 },
 };
 
-export const defaultParams = { ...presets.meadow };
+export const defaultParams = { ...presets.meadow, age: 0.5 };
 
 export function randomParams(seed) {
   const rand = rng(seed);
@@ -57,6 +65,7 @@ export function randomParams(seed) {
     leafSize: +(0.65 + rand() * 0.7).toFixed(2),
     leafVariation: +(rand() * 0.9).toFixed(2),
     lean: +(rand() * 0.4).toFixed(2),
+    age: +(0.15 + rand() * 0.75).toFixed(2),
   };
 }
 
@@ -77,7 +86,9 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
  * with visible seams at every joint.
  */
 // caps: true = both ends, 'end' = final ring only, false = open.
-function tubeGeometry(points, radii, sides, caps = true) {
+// radial: optional (t01, angle) => multiplier for non-circular cross-sections
+// (buttress flanges); flat/toon shading hides the normal approximation.
+function tubeGeometry(points, radii, sides, caps = true, radial = null) {
   const n = points.length;
   const tangents = [];
   for (let i = 0; i < n; i += 1) {
@@ -108,10 +119,11 @@ function tubeGeometry(points, radii, sides, caps = true) {
     for (let j = 0; j < sides; j += 1) {
       const a = (j / sides) * Math.PI * 2;
       const dir = normal.clone().multiplyScalar(Math.cos(a)).addScaledVector(binormal, Math.sin(a));
+      const r = radii[i] * (radial ? radial(i / (n - 1), a) : 1);
       position.push(
-        points[i].x + dir.x * radii[i],
-        points[i].y + dir.y * radii[i],
-        points[i].z + dir.z * radii[i]
+        points[i].x + dir.x * r,
+        points[i].y + dir.y * r,
+        points[i].z + dir.z * r
       );
       normalAttr.push(dir.x, dir.y, dir.z);
       uv.push(j / sides, i / (n - 1));
@@ -270,8 +282,8 @@ export function buildTree(params = {}) {
     }
   };
 
-  const addBark = (name, pts, radii, sides, caps, mat) => {
-    const mesh = new THREE.Mesh(tubeGeometry(pts, radii, sides, caps), mat);
+  const addBark = (name, pts, radii, sides, caps, mat, radial = null) => {
+    const mesh = new THREE.Mesh(tubeGeometry(pts, radii, sides, caps, radial), mat);
     mesh.name = name;
     // Exact centerline for the diagnostics — bounding boxes misplace the
     // endpoints of bowed tubes.
@@ -291,14 +303,34 @@ export function buildTree(params = {}) {
   const trunkPts = skel.spine.map((p) => p.p);
   const trunkRadii = skel.spine.map((p) => p.r);
   const trunkHead = skel.branches.find((b) => b.trunkCont);
+
+  // Buttress flanges: a star cross-section at the base that rounds out to
+  // circular partway up. The spine fraction covered by the base shrinks when
+  // leader chains are appended, so the fade is scaled to spine-local t.
+  const spineFrac = skel.spine.length;
+  const buttressFn = skel.buttress
+    ? (t01, angle, totalRings) => {
+        const spineT = t01 * (totalRings / spineFrac);
+        const fade = Math.max(0, 1 - spineT / skel.buttress.fadeT);
+        if (fade <= 0) return 1;
+        const lobe = Math.max(0, Math.cos(angle * skel.buttress.lobes + skel.buttress.phase)) ** 3;
+        return 1 + skel.buttress.amount * lobe * fade ** 1.5;
+      }
+    : null;
+  // Giants deserve extra silhouette resolution at the base where the player
+  // stands; +4 sides only when flanges exist.
+  const trunkSideCount = skel.buttress ? trunkSides + 4 : trunkSides;
+
   if (trunkHead) {
     // The leader's first point coincides with the spine's last — skip it.
     const pts = trunkPts.slice(0, -1);
     const radii = trunkRadii.slice(0, -1);
     appendChain(trunkHead, pts, radii);
-    addBark('trunk_segment', pts, radii, trunkSides, true, barkMat);
+    const radial = buttressFn ? (t, a) => buttressFn(t, a, pts.length) : null;
+    addBark('trunk_segment', pts, radii, trunkSideCount, true, barkMat, radial);
   } else {
-    addBark('trunk_segment', trunkPts, trunkRadii, trunkSides, true, barkMat);
+    const radial = buttressFn ? (t, a) => buttressFn(t, a, trunkPts.length) : null;
+    addBark('trunk_segment', trunkPts, trunkRadii, trunkSideCount, true, barkMat, radial);
   }
 
   let branchIndex = 0;

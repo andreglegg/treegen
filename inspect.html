@@ -64,14 +64,18 @@
 
         scene.background = new THREE.Color('#dfe6e4');
         scene.add(new THREE.HemisphereLight('#f8f0d0', '#7d8a78', 2.2));
+        // Scene extents scale with the subject — trees now span 2m to 40m+.
+        const bounds = new THREE.Box3().setFromObject(group).getBoundingSphere(new THREE.Sphere());
+        const r = Math.max(7, bounds.radius);
         const sun = new THREE.DirectionalLight('#fff4dc', 3.0);
-        sun.position.set(5, 9, 4);
+        sun.position.set(5, 9, 4).normalize().multiplyScalar(r * 2.2);
         sun.castShadow = true;
         sun.shadow.mapSize.set(1024, 1024);
-        sun.shadow.camera.left = -8;
-        sun.shadow.camera.right = 8;
-        sun.shadow.camera.top = 8;
-        sun.shadow.camera.bottom = -8;
+        sun.shadow.camera.left = -r * 1.4;
+        sun.shadow.camera.right = r * 1.4;
+        sun.shadow.camera.top = r * 1.4;
+        sun.shadow.camera.bottom = -r * 1.4;
+        sun.shadow.camera.far = r * 6;
         scene.add(sun);
         group.traverse((c) => {
           if (!c.isMesh) return;
@@ -79,7 +83,7 @@
           c.receiveShadow = true;
         });
         const ground = new THREE.Mesh(
-          new THREE.CircleGeometry(14, 48),
+          new THREE.CircleGeometry(r * 2.2, 48),
           new THREE.MeshStandardMaterial({ color: '#cfc9a4', roughness: 0.95 })
         );
         ground.rotation.x = -Math.PI / 2;

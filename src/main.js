@@ -19,13 +19,15 @@ import { buildTree as generateTree, meshStats, presets, leafPalettes, barkPalett
 
 const FOLIAGE = /leaf_cluster|pine_bough/;
 
-const state = { ...presets.meadow, toon: true, wind: true };
+const state = { ...presets.meadow, age: 0.5, toon: true, wind: true };
 const leaves = [];
 let treeRoot;
 let renderer;
 let scene;
 let camera;
 let controls;
+let ground;
+let sun;
 
 document.querySelector('#app').innerHTML = `
   <main class="app-shell">
@@ -57,11 +59,12 @@ document.querySelector('#app').innerHTML = `
 
         <section class="control-section">
           <div class="section-title"><h2>Shape</h2><span class="section-note">Game mesh</span></div>
-          ${rangeField('height', 'Height', 3, 10, 0.1)}
-          ${rangeField('trunkRadius', 'Trunk radius', 0.18, 0.9, 0.01)}
+          ${rangeField('age', 'Age', 0, 1, 0.01)}
+          ${rangeField('height', 'Height', 2, 50, 0.1)}
+          ${rangeField('trunkRadius', 'Trunk radius', 0.15, 2.5, 0.01)}
           ${rangeField('branchCount', 'Branch count', 4, 18, 1)}
           ${rangeField('branchSpread', 'Branch spread', 0.45, 2.2, 0.01)}
-          ${rangeField('canopySize', 'Canopy size', 0.9, 3.6, 0.01)}
+          ${rangeField('canopySize', 'Canopy size', 0.9, 8, 0.01)}
           ${rangeField('leafDensity', 'Leaf clusters', 8, 64, 1)}
           ${rangeField('leafShape', 'Leaf roundness', 0.15, 1, 0.01)}
           ${rangeField('leafSize', 'Leaf scale', 0.45, 1.7, 0.01)}
@@ -143,6 +146,9 @@ document.querySelector('#app').innerHTML = `
             <button class="preset-button" data-preset="oak"><span>Old Oak</span><small>Wide limbs, dense crown</small></button>
             <button class="preset-button" data-preset="acacia"><span>Sunset Acacia</span><small>Flat umbrella canopy</small></button>
             <button class="preset-button" data-preset="willow"><span>Riverside Willow</span><small>Soft hanging foliage</small></button>
+            <button class="preset-button" data-preset="sapling"><span>Young Sapling</span><small>Slender and upswept</small></button>
+            <button class="preset-button" data-preset="ancient"><span>Ancient Oak</span><small>Squat, gnarled veteran</small></button>
+            <button class="preset-button" data-preset="giant"><span>Forest Giant</span><small>42m emergent, buttressed</small></button>
           </div>
         </section>
 
@@ -213,13 +219,13 @@ function initThree() {
 
   const hemi = new THREE.HemisphereLight('#f8f0d0', '#80907a', 2.6);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight('#fff4dc', 3.4);
+  sun = new THREE.DirectionalLight('#fff4dc', 3.4);
   sun.position.set(4, 8, 3);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   scene.add(sun);
 
-  const ground = new THREE.Mesh(
+  ground = new THREE.Mesh(
     new THREE.CircleGeometry(8, 64),
     new THREE.MeshStandardMaterial({ color: '#d6d2aa', roughness: 0.92 })
   );
@@ -297,6 +303,7 @@ function buildTree() {
   });
 
   scene.add(treeRoot);
+  fitScene();
   updateMetrics();
 }
 
@@ -315,7 +322,30 @@ function frameTree() {
     sphere.center.y + distance * 0.3,
     sphere.center.z + distance * 0.8
   );
+  camera.far = Math.max(100, distance + sphere.radius * 10);
+  camera.updateProjectionMatrix();
   controls.update();
+}
+
+/**
+ * Trees now span 2m saplings to 40m+ giants; the fog, ground disc, sun
+ * distance, and shadow frustum are sized per tree or the big ones would be
+ * fogged out with shadows clipped to a small square.
+ */
+function fitScene() {
+  const sphere = new THREE.Box3().setFromObject(treeRoot).getBoundingSphere(new THREE.Sphere());
+  const r = Math.max(5, sphere.radius);
+  ground.scale.setScalar(Math.max(1, r / 4));
+  scene.fog.near = r * 3.4;
+  scene.fog.far = r * 9;
+  sun.position.set(4, 8, 3).normalize().multiplyScalar(r * 2.4);
+  const box = r * 1.5;
+  sun.shadow.camera.left = -box;
+  sun.shadow.camera.right = box;
+  sun.shadow.camera.top = box;
+  sun.shadow.camera.bottom = -box;
+  sun.shadow.camera.far = r * 6;
+  sun.shadow.camera.updateProjectionMatrix();
 }
 
 function updateMetrics() {
@@ -364,7 +394,7 @@ function drawSwatches(id, palettes, active, onPick) {
 
 function bindControls() {
   const fields = [
-    'seed', 'height', 'trunkRadius', 'branchCount', 'branchSpread', 'canopySize', 'leafDensity',
+    'seed', 'age', 'height', 'trunkRadius', 'branchCount', 'branchSpread', 'canopySize', 'leafDensity',
     'leafShape', 'leafSize', 'leafVariation', 'lean', 'detail', 'leafStyle',
   ];
   fields.forEach((id) => {
@@ -401,14 +431,18 @@ function bindControls() {
       leafSize: +(0.65 + Math.random() * 0.7).toFixed(2),
       leafVariation: +(Math.random() * 0.9).toFixed(2),
       lean: +(Math.random() * 0.4).toFixed(2),
+      age: +(0.15 + Math.random() * 0.75).toFixed(2),
     });
     regenerate();
   });
   document.querySelector('#resetView').addEventListener('click', frameTree);
   document.querySelectorAll('[data-preset]').forEach((button) => {
     button.addEventListener('click', () => {
-      Object.assign(state, presets[button.dataset.preset]);
+      // Reset age first: presets without an age key mean "mature", and age
+      // must not leak from a previously selected ancient/sapling preset.
+      Object.assign(state, { age: 0.5 }, presets[button.dataset.preset]);
       regenerate();
+      frameTree();
     });
   });
   document.querySelector('#exportGlb').addEventListener('click', exportGlb);

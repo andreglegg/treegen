@@ -119,14 +119,41 @@ function crownDirections(count, rand, lowest = -0.5) {
 }
 
 /**
+ * Age (0 sapling — 0.5 mature — 1 ancient) drives morphology through curves
+ * fitted from tree allometry research; 0.5 reproduces the pre-age look.
+ * Young: slender, straight, upswept, narrow tall crown, no fork, no flare.
+ * Old: flared gnarled trunk, low fork, drooping limbs, wide flattened crown.
+ */
+function ageFactors(s) {
+  const age = clamp(Number(s.age ?? 0.5), 0, 1);
+  // Trees taller than ~15m blend toward giant proportions: near-columnar
+  // shaft with a distinct basal flare zone — scaled-up cone taper is what
+  // makes a big tree read as "small tree, enlarged".
+  const giant = clamp((Number(s.height) - 15) / 25, 0, 1);
+  return {
+    age,
+    giant,
+    flare: (1 + (age - 0.5) * 0.9) * (1 + giant * 0.6),
+    wobble: lerp(0.4, 1.9, age) * (1 - giant * 0.5),
+    taperPower: lerp(1.0, 0.7, age) * (1 - giant * 0.6),
+    rxMult: lerp(0.8, 1.25, age),
+    ryMult: lerp(1.25, 0.75, age),
+    droopAdd: (age - 0.5) * 0.5,
+    crownShift: lerp(-0.1, 0.06, age),
+    // Plank buttress flanges: rainforest giants and ancient veterans.
+    buttress: 0.32 * giant + 0.14 * Math.max(0, (age - 0.75) / 0.25),
+  };
+}
+
+/**
  * The trunk as a curved, tapered poly-line. A seeded S-bend plus a root flare
  * replaces what used to be a perfectly straight cone.
  */
-function buildSpine(s, rand, profile) {
+function buildSpine(s, rand, profile, fx) {
   const samples = 8 + Number(s.detail) * 3;
   const lean = Number(s.lean);
   const phase = rand() * Math.PI * 2;
-  const wobble = (0.4 + rand() * 0.6) * s.height * 0.035;
+  const wobble = (0.4 + rand() * 0.6) * s.height * 0.035 * fx.wobble;
   // Conifers keep a visible leader spike; broadleaf trunks taper away to
   // nothing so no bare stick pokes out of the top of the crown.
   const tipRadius = s.species === 'pine' ? 0.14 : 0.04;
@@ -138,11 +165,11 @@ function buildSpine(s, rand, profile) {
     const bend = lean * s.height * 0.55 * t ** 1.5;
     const sway = Math.sin(t * Math.PI * 1.3 + phase) * wobble * t;
 
-    let radius = s.trunkRadius * ((1 - t) ** 0.85 * (1 - tipRadius) + tipRadius);
+    let radius = s.trunkRadius * ((1 - t) ** (0.85 * fx.taperPower) * (1 - tipRadius) + tipRadius);
     // Root flare, spread over the bottom quarter so it spans several rings of
     // the tube. A narrower zone lands on a single sample and renders as a
     // ledge — the trunk looks like it is wearing a boot.
-    if (t < 0.24) radius *= 1 + 0.62 * ((0.24 - t) / 0.24) ** 1.7;
+    if (t < 0.24) radius *= 1 + 0.62 * fx.flare * ((0.24 - t) / 0.24) ** 1.7;
 
     spine.push({
       p: new THREE.Vector3(bend + sway, s.height * t, sway * 0.6),
@@ -217,20 +244,32 @@ function curveBranch(start, end, bow, droop, samples) {
 export function buildSkeleton(params) {
   const s = params;
   const rand = rng(Number(s.seed));
-  const profile = SPECIES_PROFILES[s.species] ?? SPECIES_PROFILES.round;
-  let spine = buildSpine(s, rand, profile);
+  const baseProfile = SPECIES_PROFILES[s.species] ?? SPECIES_PROFILES.round;
+  const fx = ageFactors(s);
 
-  // A crown wider than the tree is tall swallows the trunk and the result
-  // reads as a bush. Only binds on short trees; at the default height and
-  // above, canopySize passes through untouched.
-  const canopy = Math.min(Number(s.canopySize), Number(s.height) * 0.42);
+  // Age reshapes the species profile: droop grows, the crown sinks and
+  // flattens, and saplings are too young to have forked into leaders at all.
+  const profile = {
+    ...baseProfile,
+    droop: baseProfile.droop + fx.droopAdd,
+    crownStart: clamp(baseProfile.crownStart + fx.crownShift, 0.15, 0.8),
+    crownY: clamp(baseProfile.crownY + fx.crownShift * 0.5, 0.3, 0.95),
+    split: fx.age < 0.35 ? null : baseProfile.split,
+  };
+  let spine = buildSpine(s, rand, profile, fx);
+
+  // Crown size is clamped RELATIVE to height at both ends: wider than 0.42h
+  // swallows the trunk and reads as a bush; narrower than 0.12h leaves a
+  // pinhead crown on a giant whose leaf masses cannot even cover the trunk
+  // tip. Between those bounds canopySize passes through untouched.
+  const canopy = clamp(Number(s.canopySize), Number(s.height) * 0.12, Number(s.height) * 0.42);
   const spread = Number(s.branchSpread);
   // Vary the crown itself per seed, not just the branch jitter inside it.
   // Without this every seed of a species shares one silhouette and the
   // generator only appears to be random.
   const vary = (amount) => 1 + (rand() - 0.5) * amount;
-  const rx = canopy * profile.rx * lerp(0.75, 1.15, clamp(spread / 2.2, 0, 1)) * vary(0.26);
-  const ry = canopy * profile.ry * vary(0.26);
+  const rx = canopy * profile.rx * lerp(0.75, 1.15, clamp(spread / 2.2, 0, 1)) * vary(0.26) * fx.rxMult;
+  const ry = canopy * profile.ry * vary(0.26) * fx.ryMult;
   const crownCentre = spineAt(spine, clamp(profile.crownY + (rand() - 0.5) * 0.07, 0.3, 0.95)).p.clone();
   if (profile.split) spine = trimSpine(spine, Number(s.height) * profile.split.at);
   // Curtain species trim deeper: their masses are narrow strands on the hull,
@@ -257,6 +296,12 @@ export function buildSkeleton(params) {
     anchors,
     crown: { centre: crownCentre, rx, ry, exponent: profile.exponent },
     profile,
+    // Plank buttress flanges at the base of giants and ancient veterans; the
+    // mesher turns this into a star-shaped base cross-section that rounds out
+    // to circular by `fadeT` of trunk height.
+    buttress: fx.buttress > 0.03
+      ? { amount: fx.buttress, lobes: 5, phase: rand() * Math.PI * 2, fadeT: 0.16 }
+      : null,
     params: s,
   };
 }
