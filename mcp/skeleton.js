@@ -31,6 +31,11 @@ export const SUN = new THREE.Vector3(5, 9, 4).normalize();
  *  lobe        crown surface perturbation, breaks up a too-perfect hull
  *  flatBottom  clamps the underside of the crown flat
  *  leafAspect  vertical stretch applied to this species' leaf masses
+ *  split       { at, count, rise, spread } — the trunk divides into this many
+ *              leaders at height fraction `at` and they fan outward before the
+ *              crown starts. This is the whole character of an acacia: photos
+ *              of Vachellia tortilis show two to four limbs leaving the trunk
+ *              low in a V, not branches hung off a single pole.
  */
 // Radii are deliberately small multiples of canopySize: the crown has to clear
 // the trunk. A crown whose underside reaches below about 45% of total height
@@ -41,21 +46,28 @@ export const SPECIES_PROFILES = {
     rise: 0.55, droop: 0.18, curtain: 0, lobe: 0.08, flatBottom: 0.15, leafAspect: 1,
   },
   oak: {
-    // Wide, heavy, flat-crowned, with pronounced lobes.
-    crownY: 0.76, rx: 0.84, ry: 0.36, exponent: 3.1, crownStart: 0.44,
-    rise: 0.34, droop: 0.3, curtain: 0, lobe: 0.16, flatBottom: 0.3, leafAspect: 0.85,
+    // Broad dense dome, wider than tall, over a short heavy trunk that forks
+    // into a couple of massive low limbs.
+    crownY: 0.74, rx: 0.86, ry: 0.44, exponent: 2.8, crownStart: 0.5,
+    rise: 0.34, droop: 0.3, curtain: 0, lobe: 0.16, flatBottom: 0.26, leafAspect: 0.9,
+    split: { at: 0.34, count: 2, rise: 0.5, spread: 0.3 },
   },
   acacia: {
-    // The umbrella: branches rise steeply then flatten, crown is a thin disc
-    // with a flat underside.
-    crownY: 0.87, rx: 0.98, ry: 0.19, exponent: 4.5, crownStart: 0.56,
-    rise: 1.0, droop: -0.1, curtain: 0, lobe: 0.07, flatBottom: 0.62, leafAspect: 0.7,
+    // The umbrella: leaders fan out low, then the crown is a thin horizontal
+    // disc with a flat underside, wider than the tree is tall.
+    crownY: 0.88, rx: 1.34, ry: 0.17, exponent: 5, crownStart: 0.62,
+    rise: 1.0, droop: -0.1, curtain: 0, lobe: 0.07, flatBottom: 0.66, leafAspect: 0.62,
+    split: { at: 0.24, count: 3, rise: 0.66, spread: 0.42 },
   },
   willow: {
-    // Tall dome over a hanging curtain. The curtain is what makes a willow,
-    // but it has to fall from a crown that is already clear of the ground.
-    crownY: 0.86, rx: 0.7, ry: 0.4, exponent: 2.1, crownStart: 0.52,
-    rise: 0.5, droop: 0.6, curtain: 0.62, lobe: 0.06, flatBottom: 0, leafAspect: 1.7,
+    // A broad dome that hangs in long vertical strands. leafAspect does the
+    // work: each leaf mass is stretched into a falling withe rather than a
+    // ball, which is what the silhouette actually reads as.
+    crownY: 0.84, rx: 0.78, ry: 0.34, exponent: 2.1, crownStart: 0.5,
+    rise: 0.45, droop: 0.7, curtain: 0.6, lobe: 0.06, flatBottom: 0, leafAspect: 2.4,
+    // Strands are thin as well as long, and only the outer crown draws out
+    // into them — photographed willows keep a rounded dome on top.
+    leafWidth: 0.44,
   },
   pine: {
     crownY: 0.6, rx: 0.9, ry: 1.2, exponent: 2, crownStart: 0.26,
@@ -218,7 +230,8 @@ export function buildSkeleton(params) {
   const rx = canopy * profile.rx * lerp(0.75, 1.15, clamp(spread / 2.2, 0, 1)) * vary(0.26);
   const ry = canopy * profile.ry * vary(0.26);
   const crownCentre = spineAt(spine, clamp(profile.crownY + (rand() - 0.5) * 0.07, 0.3, 0.95)).p.clone();
-  if (s.species !== 'pine') spine = trimSpine(spine, crownCentre.y + ry * 0.85);
+  if (profile.split) spine = trimSpine(spine, Number(s.height) * profile.split.at);
+  else if (s.species !== 'pine') spine = trimSpine(spine, crownCentre.y + ry * 0.85);
 
   const branches = [];
   const anchors = [];
@@ -244,9 +257,54 @@ export function buildSkeleton(params) {
   };
 }
 
+/**
+ * Divide the trunk into fanning leaders. Returns the leaders, each with the
+ * poly-line the crown branches will hang off, or an empty list for species
+ * that keep a single trunk.
+ */
+function buildLeaders(ctx) {
+  const { s, rand, spine, profile, branches, crownCentre, rx } = ctx;
+  const split = profile.split;
+  if (!split) return [];
+
+  // The trunk has already been cut off at the fork, so its last sample is the
+  // point every leader grows from.
+  const foot = spine[spine.length - 1];
+  const leaders = [];
+  const phase = rand() * Math.PI * 2;
+
+  for (let i = 0; i < split.count; i += 1) {
+    // Leaders are spaced evenly around the trunk, not golden-angled: a fork is
+    // a small number of limbs balancing each other, not a spiral.
+    const a = phase + (i / split.count) * Math.PI * 2 + (rand() - 0.5) * 0.5;
+    const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+    const reach = rx * split.spread * (0.8 + rand() * 0.4);
+    const end = foot.p
+      .clone()
+      .addScaledVector(dir, reach)
+      .setY(lerp(foot.p.y, crownCentre.y, split.rise * (0.85 + rand() * 0.3)));
+
+    // Bowed outward and up, so the fork reads as a V rather than a splay.
+    const points = curveBranch(foot.p.clone(), end, 0.12, -0.06, 4);
+    const id = branches.length;
+    branches.push({
+      points,
+      radius: foot.r * 0.72,
+      endRadius: foot.r * 0.44,
+      depth: 0,
+      parent: -1,
+      terminal: false,
+      leader: true,
+    });
+    leaders.push({ id, points, dir, radius: foot.r * 0.44 });
+  }
+  return leaders;
+}
+
 function buildBroadleaf(ctx) {
   const { s, rand, spine, profile, branches, anchors, crownCentre, rx, ry, maxDepth, leafCount } = ctx;
   const primaries = clamp(Math.round(Number(s.branchCount)), 1, 24);
+  const leaders = buildLeaders(ctx);
 
   // Spread the leaf budget over the primaries so the tree ends up with exactly
   // leafDensity foliage masses however the hierarchy splits.
@@ -266,14 +324,29 @@ function buildBroadleaf(ctx) {
 
   targets.forEach((target, i) => {
     if (quotas[i] === 0) return;
-    // Primaries leave the trunk between crownStart and just below the top,
-    // ordered so the outermost targets attach lowest — the way real limbs do.
-    const t = clamp(
-      lerp(profile.crownStart, 0.92, (i + 0.5) / primaries) + (rand() - 0.5) * 0.1,
-      profile.crownStart * 0.9,
-      0.96
-    );
-    const at = spineAt(spine, t);
+
+    let at;
+    let parent = -1;
+    if (leaders.length) {
+      // Hang this branch off whichever leader is heading its way, part way
+      // along so the limbs stay visible under the crown.
+      const dir = new THREE.Vector3(target.x - crownCentre.x, 0, target.z - crownCentre.z).normalize();
+      const leader = leaders.reduce((best, l) => (l.dir.dot(dir) > best.dir.dot(dir) ? l : best), leaders[0]);
+      const along = lerp(0.45, 1, (i + 0.5) / primaries);
+      const idx = clamp(Math.round(along * (leader.points.length - 1)), 1, leader.points.length - 1);
+      at = { p: leader.points[idx], r: leader.radius };
+      parent = leader.id;
+    } else {
+      // Primaries leave the trunk between crownStart and just below the top,
+      // ordered so the outermost targets attach lowest — the way real limbs do.
+      const t = clamp(
+        lerp(profile.crownStart, 0.92, (i + 0.5) / primaries) + (rand() - 0.5) * 0.1,
+        profile.crownStart * 0.9,
+        0.96
+      );
+      at = spineAt(spine, t);
+    }
+
     const outward = new THREE.Vector3(target.x - at.p.x, 0, target.z - at.p.z).normalize();
     const start = at.p.clone().addScaledVector(outward, at.r * 0.6);
 
@@ -284,8 +357,8 @@ function buildBroadleaf(ctx) {
       quota: quotas[i],
       depth: 0,
       maxDepth,
-      radius: at.r * 0.52,
-      parent: -1,
+      radius: at.r * (leaders.length ? 0.7 : 0.52),
+      parent,
     });
   });
 }
@@ -303,14 +376,18 @@ function grow(ctx) {
   // branch is curved, makes the whole limb arc down into the hanging mass —
   // dropping the tip afterwards would leave the branch above it bare.
   let aim = target;
+  let strandAmount = 0;
   if (terminal && profile.curtain) {
     const out = Math.hypot(target.x - ctx.crownCentre.x, target.z - ctx.crownCentre.z);
     const outward = clamp(out / (ctx.rx || 1), 0, 1);
+    strandAmount = outward;
     aim = target.clone();
     aim.y -= outward ** 1.2 * profile.curtain * s.height * 0.3 * (0.6 + rand() * 0.6);
     // Never let the curtain reach the ground: a willow that swallows its own
-    // trunk stops reading as a tree at all.
-    aim.y = Math.max(aim.y, s.height * 0.36);
+    // trunk stops reading as a tree at all. The floor allows for the strand
+    // hanging below the tip, not just the tip itself.
+    const strand = baseLeafRadius(ctx) * (0.6 + Number(s.leafShape) * 0.7) * profile.leafAspect;
+    aim.y = Math.max(aim.y, s.height * 0.3 + strand);
   }
 
   // Intermediate branches cover part of the distance; terminals finish the job
@@ -349,7 +426,7 @@ function grow(ctx) {
         at.y += (rand() - 0.5) * spill * 0.8;
         at.z += (rand() - 0.5) * spill;
       }
-      const anchor = makeAnchor(ctx, at, rand);
+      const anchor = makeAnchor({ ...ctx, strandAmount }, at, rand);
       anchors.push(anchor);
       // Lets the mesher drop branches that are entirely swallowed by their own
       // leaf mass — invisible geometry that still costs triangles.
@@ -404,17 +481,22 @@ function splitQuota(quota, kids, rand) {
  * the sun it is. `exposure` is what lets the palette read as lighting instead
  * of being sprayed on by index.
  */
-function makeAnchor(ctx, point, rand) {
-  const { s, profile, crownCentre, rx, ry } = ctx;
+/**
+ * Size leaf masses so neighbours overlap into a single crown surface. Mean
+ * spacing of N points on a hull of radius R goes as R/sqrt(N); the constant is
+ * tuned so adjacent masses merge without the crown becoming a smooth ball.
+ */
+function baseLeafRadius(ctx) {
+  const { s, rx, ry } = ctx;
   const count = Math.max(1, Number(s.leafDensity));
-  const variation = Number(s.leafVariation);
-
-  // Size masses so neighbours overlap into a single crown surface. Mean
-  // spacing on a hull of N points goes as R/sqrt(N); the constant is tuned so
-  // adjacent masses merge without the crown turning into a smooth ball.
   const meanR = (rx * 2 + ry) / 3;
-  const base = (2.55 * meanR) / Math.sqrt(count);
-  const radius = base * Number(s.leafSize) * (1 - variation * 0.3 + rand() * variation * 0.6);
+  return ((2.68 * meanR) / Math.sqrt(count)) * Number(s.leafSize);
+}
+
+function makeAnchor(ctx, point, rand) {
+  const { s, profile, crownCentre, ry } = ctx;
+  const variation = Number(s.leafVariation);
+  const radius = baseLeafRadius(ctx) * (1 - variation * 0.3 + rand() * variation * 0.6);
 
   const dir = new THREE.Vector3().subVectors(point, crownCentre).normalize();
   const height = clamp((point.y - (crownCentre.y - ry)) / (ry * 2 || 1), 0, 1);
@@ -423,10 +505,25 @@ function makeAnchor(ctx, point, rand) {
   // the accents read as light rather than as a second canopy colour.
   const exposure = clamp(0.5 + dir.dot(SUN) * 0.45 + (height - 0.5) * 0.35, 0, 1);
 
+  // On a curtain species the leaf mass is drawn out into a strand in
+  // proportion to how far the tip fell — inner masses stay rounded and form
+  // the dome, outer ones become long and narrow.
+  const drawn = profile.curtain ? clamp(ctx.strandAmount ?? 0, 0, 1) : 1;
+  const aspect = lerp(1, profile.leafAspect, drawn);
+
+  // A strand hangs from its branch rather than balancing on the tip. Lifting
+  // the centre lets the upper half swallow the descending limb, which would
+  // otherwise show through the curtain as a bare twig.
+  const seat = point.clone();
+  if (drawn > 0 && aspect > 1) {
+    seat.y += radius * (0.6 + Number(s.leafShape) * 0.7) * aspect * 0.35;
+  }
+
   return {
-    p: point.clone(),
+    p: seat,
     radius: Math.max(0.05, radius),
-    aspect: profile.leafAspect,
+    aspect,
+    width: lerp(1, profile.leafWidth ?? 1, drawn),
     exposure,
     spin: rand() * Math.PI * 2,
     tilt: (rand() - 0.5) * 0.5,
@@ -444,7 +541,9 @@ function buildConifer(ctx) {
   const whorls = clamp(Math.round(Number(s.leafDensity) / 4), 4, 14);
   const perWhorl = clamp(Math.round(Number(s.branchCount) / 3), 2, 6);
   const base = profile.crownStart;
-  const canopy = Number(s.canopySize) * Number(s.branchSpread) * 0.85;
+  // Narrower than a stylised "Christmas tree": photographed Picea abies runs
+  // roughly a third as wide as it is tall.
+  const canopy = Number(s.canopySize) * Number(s.branchSpread) * 0.72;
 
   for (let i = 0; i < whorls; i += 1) {
     const t = i / Math.max(1, whorls - 1);

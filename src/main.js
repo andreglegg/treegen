@@ -300,6 +300,24 @@ function buildTree() {
   updateMetrics();
 }
 
+/**
+ * Fit the view to the current tree. Species differ enormously in proportion —
+ * a wide acacia and a narrow pine cannot share one fixed camera without one of
+ * them being cropped. Only called on load and on Reset view, so it never yanks
+ * the camera while sliders are being dragged.
+ */
+function frameTree() {
+  const sphere = new THREE.Box3().setFromObject(treeRoot).getBoundingSphere(new THREE.Sphere());
+  const distance = (sphere.radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.15;
+  controls.target.copy(sphere.center);
+  camera.position.set(
+    sphere.center.x + distance * 0.52,
+    sphere.center.y + distance * 0.3,
+    sphere.center.z + distance * 0.8
+  );
+  controls.update();
+}
+
 function updateMetrics() {
   const { meshes, triangles } = meshStats(treeRoot);
   document.querySelector('#meshCount').textContent = meshes;
@@ -386,11 +404,7 @@ function bindControls() {
     });
     regenerate();
   });
-  document.querySelector('#resetView').addEventListener('click', () => {
-    camera.position.set(7.4, 5.4, 11.2);
-    controls.target.set(0, 3.6, 0);
-    controls.update();
-  });
+  document.querySelector('#resetView').addEventListener('click', frameTree);
   document.querySelectorAll('[data-preset]').forEach((button) => {
     button.addEventListener('click', () => {
       Object.assign(state, presets[button.dataset.preset]);
@@ -489,4 +503,5 @@ setIcons();
 initThree();
 bindControls();
 regenerate();
+frameTree();
 animate();

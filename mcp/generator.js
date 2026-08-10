@@ -39,7 +39,7 @@ export const presets = {
   pine: { species: 'pine', seed: 7714, height: 7.8, trunkRadius: 0.32, branchCount: 12, branchSpread: 1.0, canopySize: 2.0, leafDensity: 34, leafShape: 0.8, leafStyle: 'needles', leafSize: 1, leafVariation: 0.5, detail: 1, lean: 0.06, leafPalette: 1, barkPalette: 4 },
   oak: { species: 'oak', seed: 3048, height: 6.4, trunkRadius: 0.58, branchCount: 11, branchSpread: 1.5, canopySize: 2.5, leafDensity: 38, leafShape: 0.42, leafStyle: 'angular', leafSize: 1.0, leafVariation: 0.6, detail: 1, lean: 0.1, leafPalette: 5, barkPalette: 4 },
   acacia: { species: 'acacia', seed: 6291, height: 7.0, trunkRadius: 0.4, branchCount: 8, branchSpread: 1.7, canopySize: 2.6, leafDensity: 30, leafShape: 0.3, leafStyle: 'clustered', leafSize: 1.15, leafVariation: 0.45, detail: 1, lean: 0.2, leafPalette: 6, barkPalette: 2 },
-  willow: { species: 'willow', seed: 8174, height: 6.6, trunkRadius: 0.4, branchCount: 10, branchSpread: 1.35, canopySize: 2.2, leafDensity: 34, leafShape: 0.75, leafStyle: 'clustered', leafSize: 0.9, leafVariation: 0.6, detail: 1, lean: 0.12, leafPalette: 1, barkPalette: 5 },
+  willow: { species: 'willow', seed: 8174, height: 6.6, trunkRadius: 0.4, branchCount: 10, branchSpread: 1.4, canopySize: 2.3, leafDensity: 46, leafShape: 0.75, leafStyle: 'clustered', leafSize: 0.82, leafVariation: 0.6, detail: 1, lean: 0.12, leafPalette: 1, barkPalette: 5 },
 };
 
 export const defaultParams = { ...presets.meadow };
@@ -228,7 +228,9 @@ export function buildTree(params = {}) {
       const length = p[0].distanceTo(p[p.length - 1]);
       if (length < branch.leafRadius * 0.85) continue;
     }
-    const sides = Math.max(3, trunkSides - 2 - branch.depth * 2);
+    // Leaders are trunk, structurally and visually — they get the trunk's
+    // silhouette resolution rather than a twig's.
+    const sides = branch.leader ? trunkSides : Math.max(3, trunkSides - 2 - branch.depth * 2);
     const radii = branch.points.map((_, i) => {
       const u = i / (branch.points.length - 1);
       return Math.max(0.01, branch.radius + (branch.endRadius - branch.radius) * u);
@@ -257,7 +259,11 @@ export function buildTree(params = {}) {
   const toneFor = (exposure) =>
     exposure >= highlightCut ? leafMats.highlight : exposure <= shadowCut ? leafMats.shadow : leafMats.base;
 
-  const blob = leafGeometry(s.leafStyle, detail);
+  // A strand's shape comes from how far it is stretched, not from how finely
+  // it is subdivided, so curtain species buy their density back by dropping a
+  // subdivision level. Many fine strands read as a curtain; few fat ones read
+  // as a bunch of pods.
+  const blob = leafGeometry(s.leafStyle, skel.profile.curtain ? Math.max(0, detail - 1) : detail);
   const skirt = skel.anchors.some((a) => a.skirt)
     ? new THREE.ConeGeometry(1, 1, trunkSides + 2, 1)
     : null;
@@ -281,10 +287,11 @@ export function buildTree(params = {}) {
     mesh.name = `leaf_cluster_${i}`;
     mesh.position.copy(anchor.p);
     const flat = s.leafStyle === 'flat' ? 0.34 : 1;
+    const narrow = anchor.width ?? 1;
     mesh.scale.set(
-      anchor.radius * wide,
+      anchor.radius * wide * narrow,
       anchor.radius * tall * anchor.aspect * flat,
-      anchor.radius * wide * 0.94
+      anchor.radius * wide * 0.94 * narrow
     );
     mesh.rotation.set(anchor.tilt, anchor.spin, anchor.tilt * 0.6);
     root.add(mesh);

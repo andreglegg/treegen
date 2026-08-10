@@ -66,6 +66,21 @@ continuous swept tube with parallel-transport frames, and the three leaf tones
 are assigned by exposure rank so they read as light and shade rather than by
 index.
 
+Species rules in `SPECIES_PROFILES` are set from photographs of the real
+species rather than guessed. Two matter most:
+
+- **The trunk can fork.** `split` divides the trunk into leaders that fan out
+  in a V before the crown starts. This is the whole character of an acacia —
+  photos of *Vachellia tortilis* show two to four limbs leaving the trunk low,
+  not branches hung off a single pole — and oaks get a milder version.
+- **A crown can hang.** `curtain` draws the outer leaf masses down into long
+  thin strands while the inner crown stays a rounded dome, which is what a
+  weeping willow actually looks like.
+
+Measured crown spread (width ÷ height) tracks the references: acacia ~1.5,
+oak ~1.2, round ~0.75, conifer ~0.5. `inspect-out/stats.json` reports it, so
+that claim is checkable rather than asserted.
+
 Because the skeleton is pure math it is unit-tested directly — `npm test`.
 
 ## Inspecting output

@@ -73,10 +73,17 @@ test('trunk tapers upward and flares at the root', () => {
 });
 
 test('species silhouettes actually differ', () => {
+  // Measure the extent of the foliage itself, not just anchor centres — a
+  // willow's strands hang well below their anchor, and centres alone would
+  // report a shape the tree does not actually have.
   const spread = (species) => {
     const skel = make({ species });
     const box = new THREE.Box3();
-    for (const a of skel.anchors) box.expandByPoint(a.p);
+    for (const a of skel.anchors) {
+      const vertical = a.radius * (a.aspect ?? 1);
+      box.expandByPoint(new THREE.Vector3(a.p.x + a.radius, a.p.y + vertical, a.p.z + a.radius));
+      box.expandByPoint(new THREE.Vector3(a.p.x - a.radius, a.p.y - vertical, a.p.z - a.radius));
+    }
     const size = box.getSize(new THREE.Vector3());
     return Math.max(size.x, size.z) / (size.y || 1);
   };
