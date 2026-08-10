@@ -76,6 +76,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
  * and the trunk becomes a single smooth piece instead of stacked cylinders
  * with visible seams at every joint.
  */
+// caps: true = both ends, 'end' = final ring only, false = open.
 function tubeGeometry(points, radii, sides, caps = true) {
   const n = points.length;
   const tangents = [];
@@ -128,23 +129,28 @@ function tubeGeometry(points, radii, sides, caps = true) {
     }
   }
 
-  // Flat caps close the tube for export. Branches skip them: both ends are
-  // buried, in the parent limb below and in a leaf mass above.
+  // Flat caps close the tube's ends. A branch's start ring is buried inside
+  // its parent, so capping it buys nothing — but an open END ring is a hollow
+  // shell wherever it outlives its cover: where a thick limb hands off to
+  // thinner children, the leftover annulus reads as a severed branch floating
+  // in air. Ends always get capped; starts only for the trunk.
   if (caps) {
     const last = n - 1;
-    const capStart = position.length / 3;
-    position.push(points[0].x, points[0].y, points[0].z);
-    normalAttr.push(-tangents[0].x, -tangents[0].y, -tangents[0].z);
-    uv.push(0.5, 0);
+    if (caps === true) {
+      const capStart = position.length / 3;
+      position.push(points[0].x, points[0].y, points[0].z);
+      normalAttr.push(-tangents[0].x, -tangents[0].y, -tangents[0].z);
+      uv.push(0.5, 0);
+      for (let j = 0; j < sides; j += 1) {
+        index.push(capStart, (j + 1) % sides, j);
+      }
+    }
     const capEnd = position.length / 3;
     position.push(points[last].x, points[last].y, points[last].z);
     normalAttr.push(tangents[last].x, tangents[last].y, tangents[last].z);
     uv.push(0.5, 1);
-
     for (let j = 0; j < sides; j += 1) {
-      const j2 = (j + 1) % sides;
-      index.push(capStart, j2, j);
-      index.push(capEnd, last * sides + j, last * sides + j2);
+      index.push(capEnd, last * sides + j, last * sides + ((j + 1) % sides));
     }
   }
 
@@ -226,14 +232,29 @@ export function buildTree(params = {}) {
   };
   root.add(trunk);
 
-  // Branches. Twigs get fewer sides, and any branch entirely hidden inside its
-  // own leaf mass is skipped outright.
+  // How leaf masses will be scaled — needed before the branch loop, because
+  // whether a twig can be culled depends on the real shape of the mass that
+  // hides it.
+  const roundness = Number(s.leafShape);
+  const wide = 1.25 - roundness * 0.3;
+  const tall = 0.6 + roundness * 0.7;
+  const flat = s.leafStyle === 'flat' ? 0.34 : 1;
+
+  // Branches. Twigs get fewer sides, and a twig is culled only when its leaf
+  // mass genuinely swallows it. The test uses the mass's SMALLEST half-extent:
+  // judging by nominal radius culled near-vertical twigs under flattened pads
+  // (acacia) and left the parent limb ending in open air below the foliage.
   let branchIndex = 0;
   for (const branch of skel.branches) {
+    const p = branch.points;
+    const length = p[0].distanceTo(p[p.length - 1]);
     if (branch.leafRadius) {
-      const p = branch.points;
-      const length = p[0].distanceTo(p[p.length - 1]);
+      // Conifer skirt branches: reach-based, the skirt is as tall as it is wide.
       if (length < branch.leafRadius * 0.85) continue;
+    } else if (branch.anchorRef) {
+      const a = branch.anchorRef;
+      const minHalf = a.radius * Math.min(wide * (a.width ?? 1), tall * (a.aspect ?? 1) * flat);
+      if (length < minHalf * 0.9) continue;
     }
     // Leaders are trunk, structurally and visually — they get the trunk's
     // silhouette resolution rather than a twig's.
@@ -243,7 +264,7 @@ export function buildTree(params = {}) {
       return Math.max(0.01, branch.radius + (branch.endRadius - branch.radius) * u);
     });
     const mesh = new THREE.Mesh(
-      tubeGeometry(branch.points, radii, sides, false),
+      tubeGeometry(branch.points, radii, sides, 'end'),
       branch.depth >= 2 ? barkAltMat : barkMat
     );
     mesh.name = `branch_segment_${branchIndex}`;
@@ -283,10 +304,6 @@ export function buildTree(params = {}) {
     ? new THREE.ConeGeometry(1, 1, trunkSides + 2, 1)
     : null;
 
-  const roundness = Number(s.leafShape);
-  const wide = 1.25 - roundness * 0.3;
-  const tall = 0.6 + roundness * 0.7;
-
   anchors.forEach((anchor, i) => {
     if (anchor.skirt) {
       const mesh = new THREE.Mesh(skirt, toneFor(anchor.exposure));
@@ -301,7 +318,6 @@ export function buildTree(params = {}) {
     const mesh = new THREE.Mesh(blob, toneFor(anchor.exposure));
     mesh.name = `leaf_cluster_${i}`;
     mesh.position.copy(anchor.p);
-    const flat = s.leafStyle === 'flat' ? 0.34 : 1;
     const narrow = anchor.width ?? 1;
     mesh.scale.set(
       anchor.radius * wide * narrow,

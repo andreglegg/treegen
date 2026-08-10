@@ -233,7 +233,9 @@ export function buildSkeleton(params) {
   const ry = canopy * profile.ry * vary(0.26);
   const crownCentre = spineAt(spine, clamp(profile.crownY + (rand() - 0.5) * 0.07, 0.3, 0.95)).p.clone();
   if (profile.split) spine = trimSpine(spine, Number(s.height) * profile.split.at);
-  else if (s.species !== 'pine') spine = trimSpine(spine, crownCentre.y + ry * 0.85);
+  // Curtain species trim deeper: their masses are narrow strands on the hull,
+  // so a trunk reaching the apex pokes out between them as a bare twig.
+  else if (s.species !== 'pine') spine = trimSpine(spine, crownCentre.y + ry * (profile.curtain ? 0.5 : 0.85));
 
   const branches = [];
   const anchors = [];
@@ -308,10 +310,20 @@ function buildBroadleaf(ctx) {
   const primaries = clamp(Math.round(Number(s.branchCount)), 1, 24);
   const leaders = buildLeaders(ctx);
 
+  // Curtain species spend one leaf on a round cap at the trunk apex. Their
+  // other masses are narrow strands out on the hull, so without a cap the
+  // trunk tip pokes through the top of the dome on some seeds — and how much
+  // trimming would hide it varies seed by seed, while a cap always covers it.
+  let budget = leafCount;
+  if (profile.curtain && spine.length) {
+    anchors.push(makeAnchor({ ...ctx, strandAmount: 0 }, spine[spine.length - 1].p, rand));
+    budget = Math.max(1, leafCount - 1);
+  }
+
   // Spread the leaf budget over the primaries so the tree ends up with exactly
   // leafDensity foliage masses however the hierarchy splits.
   const quotas = Array.from({ length: primaries }, (_, i) =>
-    Math.floor(leafCount / primaries) + (i < leafCount % primaries ? 1 : 0)
+    Math.floor(budget / primaries) + (i < budget % primaries ? 1 : 0)
   );
 
   // A flat-bottomed disc keeps every target on or above its equator — one
@@ -393,7 +405,7 @@ function buildBroadleaf(ctx) {
     const tip = leader.points[leader.points.length - 1];
     const anchor = makeAnchor(ctx, tip, rand);
     anchors.push(anchor);
-    branches[leader.id].leafRadius = anchor.radius;
+    branches[leader.id].anchorRef = anchor;
   }
 }
 
@@ -465,8 +477,10 @@ function grow(ctx) {
       const anchor = makeAnchor({ ...ctx, strandAmount }, at, rand);
       anchors.push(anchor);
       // Lets the mesher drop branches that are entirely swallowed by their own
-      // leaf mass — invisible geometry that still costs triangles.
-      if (c === 0) branches[id].leafRadius = anchor.radius;
+      // leaf mass — invisible geometry that still costs triangles. The whole
+      // anchor is stored because the decision needs the mass's real shape: a
+      // flattened pad covers far less of a vertical twig than its radius says.
+      if (c === 0) branches[id].anchorRef = anchor;
     }
     return;
   }
@@ -593,9 +607,13 @@ function buildConifer(ctx) {
       const a = GOLDEN * (i * perWhorl + k) + rand() * 0.3;
       const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
       const start = at.p.clone().addScaledVector(dir, at.r * 0.5);
-      // Branches stop short of the skirt rim. Letting them through turns the
-      // silhouette into a bundle of dead spikes.
-      const end = start.clone().addScaledVector(dir, reach * 0.78).setY(at.p.y - reach * 0.3);
+      // Deliberately long enough to pierce the skirt's sloped side — the tick
+      // of a branch tip breaking the cone is what keeps the pine from reading
+      // as stacked lampshades — while staying above the bottom rim, where a
+      // tip would dangle in open air. The 0.88/0.16 pair also keeps the chord
+      // safely past the mesher's swallowed-twig cull; an earlier 0.78/0.30
+      // survived that cull by 0.2% and quietly died when retuned.
+      const end = start.clone().addScaledVector(dir, reach * 0.88).setY(at.p.y - reach * 0.16);
       branches.push({
         points: curveBranch(start, end, -0.05, profile.droop * 0.5, 3),
         radius: at.r * 0.34,

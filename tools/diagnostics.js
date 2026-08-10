@@ -43,13 +43,30 @@ function segmentOf(mesh) {
   };
 }
 
-// Foliage as a centre plus an effective radius, so "is this branch inside a
-// leaf mass" becomes a distance test.
+// Foliage as a centre plus per-axis half-extents. A bounding sphere is not
+// good enough here: a pad squashed flat still gets its full radius vertically,
+// so a bare twig under an acacia's umbrella would count as covered. The
+// ellipsoid test is what actually catches that.
 function blobOf(mesh) {
-  mesh.geometry.computeBoundingSphere();
+  mesh.geometry.computeBoundingBox();
+  const half = mesh.geometry.boundingBox.getSize(new THREE.Vector3()).multiplyScalar(0.5);
   const s = mesh.getWorldScale(new THREE.Vector3());
-  const radius = mesh.geometry.boundingSphere.radius * Math.max(s.x, s.y, s.z);
-  return { centre: mesh.getWorldPosition(new THREE.Vector3()), radius };
+  const extents = new THREE.Vector3(half.x * s.x, half.y * s.y, half.z * s.z);
+  return {
+    centre: mesh.getWorldPosition(new THREE.Vector3()),
+    extents,
+    radius: Math.max(extents.x, extents.y, extents.z),
+  };
+}
+
+// Normalised ellipsoid distance: <1 means p is inside the mass, and the margin
+// scales with the mass's real shape on each axis. Rotation is ignored, which
+// errs toward reporting a defect rather than hiding one.
+function ellipsoidDistance(p, blob) {
+  const dx = (p.x - blob.centre.x) / (blob.extents.x || 1e-9);
+  const dy = (p.y - blob.centre.y) / (blob.extents.y || 1e-9);
+  const dz = (p.z - blob.centre.z) / (blob.extents.z || 1e-9);
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 function collect(group) {
@@ -104,9 +121,10 @@ export function diagnose(group) {
     if (seg.a.y > 0.2 && !connected(seg.a, seg)) tips.push(seg.a);
   }
 
-  // A tip with no leaf mass around it is a stick poking into open air.
+  // A tip with no leaf mass around it is a stick poking into open air. The
+  // ellipsoid test respects each mass's real shape per axis.
   const sticksInAir = tips.filter(
-    (tip) => !foliage.some((f) => tip.distanceTo(f.centre) < f.radius * 1.25)
+    (tip) => !foliage.some((f) => ellipsoidDistance(tip, f) < 1.25)
   ).length;
 
   // A leaf mass with no branch inside or near it is floating unsupported.
