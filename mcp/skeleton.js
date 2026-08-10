@@ -501,7 +501,12 @@ export function buildSkeleton(params) {
     const limbs = branches
       .filter((b) => b.depth === 0 && !b.root && !b.twig)
       .sort((a, b) => peakY(b) - peakY(a));
-    const crownTop = crownCentre.y + ry;
+    // The reference top must be the tree AS BUILT: brokenTop chops the trunk
+    // after the crown numbers were computed, and a bare tree has no crown at
+    // all — measuring against the phantom crown of the unbroken/leafy tree
+    // stretched spikes into flag poles high above the snag.
+    const builtTop = limbs.length ? Math.max(...limbs.map(peakY)) : crownCentre.y;
+    const crownTop = bare || s.brokenTop ? builtTop : crownCentre.y + ry;
     const count = Math.min(limbs.length, 2 + Math.floor(rand() * 3)); // 2-4
     for (let i = 0; i < count; i += 1) {
       const limb = limbs[i];
@@ -510,14 +515,23 @@ export function buildSkeleton(params) {
         1, limb.points.length - 1
       );
       const start = limb.points[idx].clone(); // ON the limb centerline
-      // Length scales with crown height; the end is pushed above the crown
-      // hull so the spike actually breaks the silhouette.
-      const len = crownTop * (0.17 + rand() * 0.1);
+      // Antler proportions. On a bare or broken-top tree the whole spike is
+      // visible, so it stays short — forcing it above the phantom crown of
+      // the unbroken tree is what produced flag poles over the snag. On a
+      // leafy tree the crown hides the spike's body and only the part above
+      // the hull shows, so it rises as far as the crown demands — with the
+      // outward lean scaled to the ACTUAL rise, so a tall spike leans like an
+      // antler instead of standing like an antenna.
+      const len = crownTop * (0.14 + rand() * 0.08);
       const a = rand() * Math.PI * 2;
+      const rise = bare || s.brokenTop
+        ? len * 0.8
+        : Math.max(len * 0.8, crownTop + len * 0.3 - start.y);
+      const lean = Math.max(len * 0.55, rise * 0.4);
       const end = new THREE.Vector3(
-        start.x + Math.cos(a) * len * 0.3,
-        Math.max(start.y + len * 0.85, crownTop + len * 0.45),
-        start.z + Math.sin(a) * len * 0.3
+        start.x + Math.cos(a) * lean,
+        start.y + rise,
+        start.z + Math.sin(a) * lean
       );
       const u = idx / (limb.points.length - 1);
       const atR = lerp(limb.radius, limb.endRadius, u);
