@@ -6,6 +6,7 @@ import { OBJExporter } from 'three/examples/jsm/exporters/OBJExporter.js';
 import {
   Download,
   FileJson,
+  Gamepad2,
   Image,
   Leaf,
   RotateCcw,
@@ -16,6 +17,7 @@ import {
 // Geometry comes from the shared generator — the same code the MCP server and
 // library consumers use. This app only re-materialises it for preview.
 import { buildTree as generateTree, meshStats, presets, leafPalettes, barkPalettes } from '../mcp/generator.js';
+import { exportGameGlb as buildGameGlb } from '../mcp/export.js';
 
 const FOLIAGE = /leaf_cluster|pine_bough/;
 
@@ -134,6 +136,7 @@ document.querySelector('#app').innerHTML = `
           <div class="section-title"><h2>Export</h2><span class="section-note">Godot friendly</span></div>
           <div class="export-grid">
             <button class="tool-button primary" id="exportGlb"></button>
+            <button class="tool-button" id="exportGameGlb" title="Merged bark+foliage meshes under LOD0/LOD1/LOD2 nodes — 2 draw calls per LOD"></button>
             <button class="tool-button" id="exportObj"></button>
             <button class="tool-button" id="exportJson"></button>
             <button class="tool-button" id="exportPng"></button>
@@ -202,6 +205,7 @@ function setIcons() {
   icon(document.querySelector('#resetView'), RotateCcw);
   icon(document.querySelector('#randomize'), Shuffle, 'Random variation');
   icon(document.querySelector('#exportGlb'), Download, 'Export GLB');
+  icon(document.querySelector('#exportGameGlb'), Gamepad2, 'Export game GLB');
   icon(document.querySelector('#exportObj'), Sprout, 'Export OBJ');
   icon(document.querySelector('#exportJson'), FileJson, 'Export preset');
   icon(document.querySelector('#exportPng'), Image, 'Save PNG preview');
@@ -456,6 +460,7 @@ function bindControls() {
     });
   });
   document.querySelector('#exportGlb').addEventListener('click', exportGlb);
+  document.querySelector('#exportGameGlb').addEventListener('click', exportGameGlbFile);
   document.querySelector('#exportObj').addEventListener('click', exportObj);
   document.querySelector('#exportJson').addEventListener('click', exportJson);
   document.querySelector('#exportPng').addEventListener('click', exportPng);
@@ -495,6 +500,14 @@ function exportGlb() {
     (error) => console.error(error),
     { binary: true, trs: false, onlyVisible: true }
   );
+}
+
+// Game-ready GLB: rebuilds the current params headlessly at detail 2/1/0,
+// merges each LOD to bark+foliage meshes, and downloads a GLB with
+// LOD0/LOD1/LOD2 nodes (see mcp/export.js exportGameGlb).
+async function exportGameGlbFile() {
+  const buffer = await buildGameGlb({ ...state });
+  saveBlob(new Blob([buffer], { type: 'model/gltf-binary' }), `treegen_game_${state.species}_${state.seed}.glb`);
 }
 
 function exportObj() {

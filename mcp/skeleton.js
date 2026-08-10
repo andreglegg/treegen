@@ -122,6 +122,22 @@ export function rng(seed) {
   };
 }
 
+/**
+ * Mix a seed with a subsystem tag and indices into a fresh rng seed. Each
+ * subsystem (and each primary branch within one) draws from its OWN derived
+ * stream instead of a single shared sequence — so dragging a slider that adds
+ * or removes draws (branch count, leaf density) morphs the tree instead of
+ * reshuffling every other branch's randomness downstream.
+ */
+export function subSeed(seed, ...tags) {
+  let h = (Number(seed) >>> 0) || 1;
+  for (const t of tags) {
+    h = (h ^ Math.imul((Number(t) + 0x9e37) >>> 0, 2654435761)) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), 40503) >>> 0;
+  }
+  return (h % 2147483646) + 1;
+}
+
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -145,12 +161,13 @@ function hullRadius(dir, rx, ry, rz, exponent, lobe) {
  * The lower bound stops short of straight down: nothing grows to the underside
  * of a crown from the inside.
  */
-function crownDirections(count, rand, lowest = -0.5) {
+function crownDirections(count, seed, lowest = -0.5) {
   const dirs = [];
   for (let i = 0; i < count; i += 1) {
     const y = lerp(1, lowest, (i + 0.5) / count);
     const r = Math.sqrt(Math.max(0, 1 - y * y));
-    const theta = GOLDEN * i + rand() * 0.9;
+    // Per-index stream: adding a branch must not re-aim every other one.
+    const theta = GOLDEN * i + rng(subSeed(seed, 7, i))() * 0.9;
     dirs.push(new THREE.Vector3(Math.cos(theta) * r, y, Math.sin(theta) * r).normalize());
   }
   return dirs;
@@ -394,7 +411,12 @@ export function buildSkeleton(params) {
   // keep their leader spike; palms keep the full trunk — the rosette sits ON
   // the apex.
   else if (s.species !== 'pine' && profile.builder !== 'palm') {
-    spine = trimSpine(spine, crownCentre.y + ry * (profile.curtain ? 0.5 : 0.85));
+    // Coverage scales with leafSize: small masses hide less of the tip, so
+    // the trunk stops lower to stay buried.
+    const cover = profile.curtain
+      ? 0.5
+      : lerp(0.58, 0.85, clamp((Number(s.leafSize) - 0.45) / 0.55, 0, 1));
+    spine = trimSpine(spine, crownCentre.y + ry * cover);
   }
 
   // SNAG: a storm-broken top. The trunk stops at ~70% of its height and the
@@ -448,11 +470,13 @@ export function buildSkeleton(params) {
     const at = spineAt(spine, 0.04);
     const count = 3 + (fx.giant > 0.3 ? 1 : 0);
     for (let i = 0; i < count; i += 1) {
-      const a = GOLDEN * i + rand() * 0.6;
+      // Per-spur stream — see subSeed().
+      const rrand = rng(subSeed(Number(s.seed), 29, i));
+      const a = GOLDEN * i + rrand() * 0.6;
       const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
       // Short and stout: surface roots hug the trunk. Long thin spurs read as
       // spider legs. Tips sink slightly below grade so they end IN the ground.
-      const reach = at.r * (1.0 + rand() * 0.55) * (1 + fx.age * 0.35);
+      const reach = at.r * (1.0 + rrand() * 0.55) * (1 + fx.age * 0.35);
       const end = at.p.clone().addScaledVector(dir, reach).setY(-0.04);
       branches.push({
         points: curveBranch(at.p.clone(), end, -0.1, 0, 3),
@@ -622,10 +646,11 @@ function buildBroadleaf(ctx) {
   const primaries = clamp(Math.round(Number(s.branchCount)), 1, 24);
   const leaders = buildLeaders(ctx);
 
-  // Curtain species spend one leaf on a round cap at the trunk apex. Their
-  // other masses are narrow strands out on the hull, so without a cap the
-  // trunk tip pokes through the top of the dome on some seeds — and how much
-  // trimming would hide it varies seed by seed, while a cap always covers it.
+  // Every unforked broadleaf spends one leaf on a round cap at the trunk
+  // apex, so the trunk tip is guaranteed to end inside a mass at ANY leafSize
+  // — trim-depth tuning can't achieve that, because at tiny leaf sizes the
+  // hull masses cover nothing beyond their own branch tips. (Split species
+  // don't need it: their trunk ends at the fork, buried in leaders.)
   let budget = leafCount;
   if (ctx.bare) {
     // Bare/winter tree: no anchors will be placed, but the same quota
@@ -634,7 +659,7 @@ function buildBroadleaf(ctx) {
     // mid-density leafy tree would have; grow() turns each would-be anchor
     // into fine twigs instead.
     budget = primaries * 3;
-  } else if (profile.curtain && spine.length) {
+  } else if (!leaders.length && spine.length) {
     anchors.push(makeAnchor({ ...ctx, strandAmount: 0 }, spine[spine.length - 1].p, rand));
     budget = Math.max(1, leafCount - 1);
   }
@@ -657,12 +682,13 @@ function buildBroadleaf(ctx) {
     ? Array.from({ length: primaries }, (_, i) => {
         const y = lerp(-0.9, 0.94, (i + 0.5) / primaries);
         const rr = rx * Math.max(0, 1 - Math.abs(y) ** profile.exponent) ** (1 / profile.exponent);
-        const theta = GOLDEN * i + rand() * 0.9;
+        // Per-index stream — see crownDirections.
+        const theta = GOLDEN * i + rng(subSeed(Number(s.seed), 7, i))() * 0.9;
         return crownCentre
           .clone()
           .add(new THREE.Vector3(Math.cos(theta) * rr, y * ry, Math.sin(theta) * rr));
       })
-    : crownDirections(primaries, rand, profile.flatBottom > 0.4 ? 0 : -0.5).map((dir) => {
+    : crownDirections(primaries, Number(s.seed), profile.flatBottom > 0.4 ? 0 : -0.5).map((dir) => {
         const r = hullRadius(dir, rx, ry, rx, profile.exponent, profile.lobe);
         const p = crownCentre.clone().addScaledVector(dir, r);
         if (profile.flatBottom) {
@@ -698,6 +724,12 @@ function buildBroadleaf(ctx) {
   targets.forEach((target, i) => {
     if (quotas[i] === 0) return;
 
+    // Each primary limb owns a derived randomness stream: its whole subtree
+    // (jitters, splits, anchor shapes) is a function of (seed, i) alone, so
+    // slider changes that affect other primaries cannot reshuffle this one —
+    // the tree MORPHS under the sliders instead of rerolling.
+    const prand = rng(subSeed(Number(s.seed), 13, i));
+
     let at;
     let parent = -1;
     let continues = false;
@@ -715,7 +747,7 @@ function buildBroadleaf(ctx) {
       // Primaries leave the trunk between crownStart and just below the top,
       // ordered so the outermost targets attach lowest — the way real limbs do.
       const t = clamp(
-        lerp(profile.crownStart, 0.92, (i + 0.5) / primaries) + (rand() - 0.5) * 0.1,
+        lerp(profile.crownStart, 0.92, (i + 0.5) / primaries) + (prand() - 0.5) * 0.1,
         profile.crownStart * 0.9,
         0.96
       );
@@ -727,6 +759,7 @@ function buildBroadleaf(ctx) {
     // and emerges through the flank. Nothing can start in open air.
     grow({
       ...ctx,
+      rand: prand,
       start: at.p.clone(),
       target,
       quota: quotas[i],
@@ -967,14 +1000,17 @@ function buildConifer(ctx) {
   const canopy = Number(s.canopySize) * Number(s.branchSpread) * 0.72;
 
   for (let i = 0; i < whorls; i += 1) {
+    // Per-whorl stream: leafDensity changes the whorl count without
+    // reshuffling the whorls that already existed.
+    const wrand = rng(subSeed(Number(s.seed), 17, i));
     const t = i / Math.max(1, whorls - 1);
     const h = lerp(base, 0.95, t);
     const at = spineAt(spine, h);
     // Skirts shrink toward the top; the lowest is widest.
-    const reach = canopy * (1.0 - t * 0.72) * (0.9 + rand() * 0.2);
+    const reach = canopy * (1.0 - t * 0.72) * (0.9 + wrand() * 0.2);
 
     for (let k = 0; k < perWhorl; k += 1) {
-      const a = GOLDEN * (i * perWhorl + k) + rand() * 0.3;
+      const a = GOLDEN * (i * perWhorl + k) + wrand() * 0.3;
       const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
       // Start on the trunk's centerline so the whorl branch is buried at its
       // root and emerges through the bark.
@@ -1014,7 +1050,7 @@ function buildConifer(ctx) {
       radius: reach,
       aspect: 1,
       exposure: clamp(0.25 + t * 0.7, 0, 1),
-      spin: rand() * Math.PI * 2,
+      spin: wrand() * Math.PI * 2,
       tilt: 0,
       skirt: true,
       height: Math.max(0.4, s.height * (0.19 - t * 0.07) * (0.7 + Number(s.leafShape) * 0.6)),
@@ -1044,18 +1080,20 @@ function buildPalm(ctx) {
   );
 
   for (let i = 0; i < count; i += 1) {
-    const a = phase + (i / count) * Math.PI * 2 + (rand() - 0.5) * 0.35;
+    // Per-frond stream — branchCount tweaks must not respin every frond.
+    const frand = rng(subSeed(Number(s.seed), 23, i));
+    const a = phase + (i / count) * Math.PI * 2 + (frand() - 0.5) * 0.35;
     // Alternate fronds droop harder, so the rosette reads as layered — an
     // upper crown of rising blades over a skirt of falling ones — instead of
     // a flat star. Radians below horizontal.
-    const tilt = 0.12 + rand() * 0.4 + (i % 2) * 0.38;
+    const tilt = 0.12 + frand() * 0.4 + (i % 2) * 0.38;
     const dir = new THREE.Vector3(
       Math.cos(a) * Math.cos(tilt),
       -Math.sin(tilt),
       Math.sin(a) * Math.cos(tilt)
     );
 
-    const radius = frondLen * 0.5 * (0.88 + rand() * 0.24);
+    const radius = frondLen * 0.5 * (0.88 + frand() * 0.24);
     // The frond blade is centred at the stub's tip; placing that tip most of a
     // half-length out leaves the blade's inner end at the trunk apex, so the
     // frond visibly grows FROM the crown shaft.

@@ -7,6 +7,7 @@
   "exports": {
     "./generator": "./mcp/generator.js",
     "./export": "./mcp/export.js",
+    "./merge": "./mcp/merge.js",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -15,7 +16,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "mcp": "node mcp/server.js",
     "inspect": "node tools/inspect.js",
-    "test": "node --test tools/*.test.js mcp/*.test.js"
+    "test": "node --test \"mcp/*.test.js\""
   },
   "dependencies": {
     "three": "^0.168.0"

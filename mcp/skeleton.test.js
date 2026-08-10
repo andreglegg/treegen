@@ -49,7 +49,15 @@ test('broadleaf foliage count honours leafDensity', () => {
   for (const leafDensity of [8, 21, 46, 64]) {
     for (const species of ['round', 'oak', 'acacia', 'willow', 'birch', 'poplar', 'baobab']) {
       const skel = make({ species, leafDensity });
-      assert.equal(skel.anchors.length, leafDensity, `${species} @ ${leafDensity}`);
+      // Forked species may exceed by up to one protective cap per leader: a
+      // leader every target snubbed still gets a leaf mass so it cannot end
+      // as a bare stick. At tiny densities on many-leader species (baobab has
+      // six) that overshoot is the correct trade — never fewer, never bare.
+      const caps = skel.profile.split?.count ?? 0;
+      assert.ok(
+        skel.anchors.length >= leafDensity && skel.anchors.length <= leafDensity + caps,
+        `${species} @ ${leafDensity}: got ${skel.anchors.length}`
+      );
     }
   }
 });
@@ -258,6 +266,18 @@ test('birch carries a small crown high on a slim trunk', () => {
   };
   const oak = make({ species: 'oak' });
   assert.ok(spanOf(skel) < spanOf(oak) * 0.8, 'birch crown should be airier and smaller than an oak');
+});
+
+test('sliders morph, not reshuffle: unrelated randomness is stable', () => {
+  const spineOf = (over) => buildSkeleton({ ...defaultParams, ...over }).spine.map((p) => [
+    +p.p.x.toFixed(6), +p.p.y.toFixed(6), +p.p.z.toFixed(6),
+  ]);
+  // Changing foliage density or branch count must not re-roll the trunk.
+  // (Within a primary, changing its QUOTA legitimately restructures that
+  // subtree — the guarantee is that OTHER subsystems' randomness holds still,
+  // not that a subtree is frozen while its own inputs change.)
+  assert.deepEqual(spineOf({ leafDensity: 20 }), spineOf({ leafDensity: 44 }));
+  assert.deepEqual(spineOf({ branchCount: 8 }), spineOf({ branchCount: 14 }));
 });
 
 test('all presets build', () => {
