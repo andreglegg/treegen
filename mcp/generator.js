@@ -174,15 +174,19 @@ function tubeGeometry(points, radii, sides, caps = true, radial = null) {
   return geom;
 }
 
+// Subdivision is capped at one level for every style: a twice-subdivided
+// icosahedron is a near-sphere, and smooth balloons are the opposite of the
+// chunky faceted look this generator is for. Higher detail tiers spend their
+// triangles on structure (accent blobs, root spurs, fluting) instead.
 function leafGeometry(style, detail) {
-  const d = clamp(detail, 0, 2);
+  const d = clamp(detail, 0, 1);
   switch (style) {
     case 'angular':
-      return new THREE.DodecahedronGeometry(1, Math.max(0, d - 1));
+      return new THREE.DodecahedronGeometry(1, 0);
     case 'rounded':
       return new THREE.SphereGeometry(1, 6 + d * 3, 4 + d * 2);
     case 'flat':
-      return new THREE.IcosahedronGeometry(1, Math.max(0, d - 1));
+      return new THREE.IcosahedronGeometry(1, 0);
     case 'needles':
       return new THREE.ConeGeometry(1, 1.8, 5 + d * 2, 1);
     case 'clustered':
@@ -321,16 +325,35 @@ export function buildTree(params = {}) {
   // stands; +4 sides only when flanges exist.
   const trunkSideCount = skel.buttress ? trunkSides + 4 : trunkSides;
 
+  // Bark fluting: shallow vertical lobes fading out partway up the trunk.
+  // Hero detail and old trees get it — the organic irregularity that stops a
+  // closeup trunk reading as a smooth pipe. Phase comes from the seed, not a
+  // rand() draw, so it cannot shift the tree's other randomness.
+  const treeAge = clamp(Number(s.age ?? 0.5), 0, 1);
+  const fluteAmp = (detail === 2 ? 0.05 : 0) + (treeAge >= 0.8 ? 0.045 : 0);
+  const fluteFn = fluteAmp > 0
+    ? (() => {
+        const lobes = Math.max(3, Math.floor(trunkSideCount / 2) - 1);
+        const phase = ((Number(s.seed) % 97) / 97) * Math.PI * 2;
+        return (t01, angle) =>
+          1 + fluteAmp * Math.cos(angle * lobes + phase) * Math.max(0, 1 - t01 / 0.7);
+      })()
+    : null;
+
+  const composeRadial = (ringCount) => {
+    if (!buttressFn && !fluteFn) return null;
+    return (t, a) =>
+      (buttressFn ? buttressFn(t, a, ringCount) : 1) * (fluteFn ? fluteFn(t, a) : 1);
+  };
+
   if (trunkHead) {
     // The leader's first point coincides with the spine's last — skip it.
     const pts = trunkPts.slice(0, -1);
     const radii = trunkRadii.slice(0, -1);
     appendChain(trunkHead, pts, radii);
-    const radial = buttressFn ? (t, a) => buttressFn(t, a, pts.length) : null;
-    addBark('trunk_segment', pts, radii, trunkSideCount, true, barkMat, radial);
+    addBark('trunk_segment', pts, radii, trunkSideCount, true, barkMat, composeRadial(pts.length));
   } else {
-    const radial = buttressFn ? (t, a) => buttressFn(t, a, trunkPts.length) : null;
-    addBark('trunk_segment', trunkPts, trunkRadii, trunkSideCount, true, barkMat, radial);
+    addBark('trunk_segment', trunkPts, trunkRadii, trunkSideCount, true, barkMat, composeRadial(trunkPts.length));
   }
 
   let branchIndex = 0;
@@ -403,6 +426,43 @@ export function buildTree(params = {}) {
     mesh.rotation.set(anchor.tilt, anchor.spin, anchor.tilt * 0.6);
     root.add(mesh);
   });
+
+  // Accent blobs: smaller secondary masses lapped over the big ones so the
+  // crown surface reads as clumped foliage rather than a bag of balloons.
+  // Deterministic from each anchor's own randomness (spin/tilt) — no extra
+  // RNG draw, so seeds keep reproducing byte-identical trees. Offset stays
+  // within 0.6 R of the anchor so every accent remains attached to the same
+  // branch its parent mass sits on.
+  if (detail >= 1) {
+    const centre = skel.crown.centre;
+    const frac = detail === 2 ? 0.9 : 0.45;
+    // One subdivision below the main masses: chunkier, and a quarter the tris.
+    const accentBlob = leafGeometry(s.leafStyle, detail - 1);
+    let accentIndex = anchors.length;
+    anchors.forEach((anchor) => {
+      if (anchor.skirt || (anchor.width ?? 1) < 1) return; // not on willow strands
+      const pick = (Math.sin(anchor.spin * 12.9898) + 1) / 2; // hash of existing noise
+      if (pick > frac) return;
+
+      const out = new THREE.Vector3().subVectors(anchor.p, centre);
+      out.y = Math.abs(out.y) * 0.6; // bias accents to the upper, visible side
+      if (out.lengthSq() < 1e-6) out.set(1, 0.5, 0);
+      out.normalize();
+      // Swing the offset around the outward direction by the anchor's spin so
+      // accents don't all sit at the same latitude.
+      const swing = new THREE.Vector3(Math.cos(anchor.spin), 0, Math.sin(anchor.spin));
+      const dir = out.clone().multiplyScalar(0.75).addScaledVector(swing, 0.45).normalize();
+
+      const r = anchor.radius * (0.42 + pick * 0.2);
+      const mesh = new THREE.Mesh(accentBlob, toneFor(anchor.exposure + 0.08));
+      mesh.name = `leaf_cluster_${accentIndex}`;
+      accentIndex += 1;
+      mesh.position.copy(anchor.p).addScaledVector(dir, anchor.radius * 0.58);
+      mesh.scale.set(r * wide, r * tall * flat, r * wide * 0.94);
+      mesh.rotation.set(anchor.tilt * 1.4, anchor.spin * 1.7, anchor.tilt);
+      root.add(mesh);
+    });
+  }
 
   return root;
 }

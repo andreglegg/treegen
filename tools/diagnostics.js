@@ -115,10 +115,12 @@ export function diagnose(group) {
   const connected = (p, self) =>
     bark.some((o) => o !== self && distToBark(p, o) < Math.max(o.radius, 0.04) * 2.2);
 
+  // Endpoints at ground level are root spurs meeting the soil — supported by
+  // the ground, not dangling in air.
   const tips = [];
   for (const seg of bark) {
-    if (!connected(seg.b, seg)) tips.push(seg.b);
-    if (seg.a.y > 0.2 && !connected(seg.a, seg)) tips.push(seg.a);
+    if (seg.b.y > 0.25 && !connected(seg.b, seg)) tips.push(seg.b);
+    if (seg.a.y > 0.25 && !connected(seg.a, seg)) tips.push(seg.a);
   }
 
   // A tip with no leaf mass around it is a stick poking into open air. The
@@ -127,10 +129,29 @@ export function diagnose(group) {
     (tip) => !foliage.some((f) => ellipsoidDistance(tip, f) < 1.25)
   ).length;
 
-  // A leaf mass with no branch inside or near it is floating unsupported.
-  const floatingLeaves = foliage.filter(
-    (f) => !bark.some((seg) => distToBark(f.centre, seg) < f.radius * 1.5)
-  ).length;
+  // A leaf mass is supported if a branch runs inside or near it — or if it is
+  // lapped onto a mass that is itself supported (accent blobs ride on the big
+  // masses; foliage clumps hold each other up visually). Support propagates
+  // through overlaps until nothing changes.
+  const supported = foliage.map((f) =>
+    bark.some((seg) => distToBark(f.centre, seg) < f.radius * 1.5)
+  );
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < foliage.length; i += 1) {
+      if (supported[i]) continue;
+      for (let j = 0; j < foliage.length; j += 1) {
+        if (i === j || !supported[j]) continue;
+        if (foliage[i].centre.distanceTo(foliage[j].centre) < foliage[j].radius) {
+          supported[i] = true;
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+  const floatingLeaves = supported.filter((x) => !x).length;
 
   const box = new THREE.Box3().setFromObject(group);
   const size = box.getSize(new THREE.Vector3());

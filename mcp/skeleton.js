@@ -290,6 +290,32 @@ export function buildSkeleton(params) {
     });
   }
 
+  // Root spurs: short surface roots sagging from the base to the ground.
+  // Mature and old trees only — saplings haven't earned them — and drawn LAST
+  // so the extra rand() calls don't shift any of the randomness above (the
+  // same seed keeps the same tree, plus roots).
+  if (fx.age >= 0.35 && Number(s.detail) >= 1) {
+    const at = spineAt(spine, 0.04);
+    const count = 3 + (fx.giant > 0.3 ? 1 : 0);
+    for (let i = 0; i < count; i += 1) {
+      const a = GOLDEN * i + rand() * 0.6;
+      const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+      // Short and stout: surface roots hug the trunk. Long thin spurs read as
+      // spider legs. Tips sink slightly below grade so they end IN the ground.
+      const reach = at.r * (1.0 + rand() * 0.55) * (1 + fx.age * 0.35);
+      const end = at.p.clone().addScaledVector(dir, reach).setY(-0.04);
+      branches.push({
+        points: curveBranch(at.p.clone(), end, -0.1, 0, 3),
+        radius: at.r * 0.34,
+        endRadius: at.r * 0.14,
+        depth: 0,
+        parent: -1,
+        terminal: false,
+        root: true,
+      });
+    }
+  }
+
   return {
     spine,
     branches,
