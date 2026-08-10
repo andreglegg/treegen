@@ -77,13 +77,13 @@ function sheetSpecs(presets) {
     {
       file: 'angles.png',
       title: 'Rotation & overhead',
-      subtitle: 'oak from five angles, then every species from directly above',
-      cols: 5,
+      subtitle: 'every preset from three sides — a preset is only done when no side is its bad side',
+      cols: 6,
       cellW: 280,
       cellH: 330,
       cells: [
-        ...[0, 72, 144, 216, 288].map((az) =>
-          cell(`oak · ${az}°`, base('oak'), { view: { azimuth: az } })
+        ...[30, 150, 270].flatMap((az) =>
+          PRESETS.map((p) => cell(`${p} · ${az}°`, base(p), { view: { azimuth: az } }))
         ),
         ...SPECIES.map((sp) =>
           cell(`${sp} · top`, { ...presets.meadow, species: sp }, { view: { elevation: 84 } })

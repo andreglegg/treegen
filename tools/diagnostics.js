@@ -7,11 +7,22 @@ import * as THREE from 'three';
 const BARK = /trunk|branch_segment/;
 const FOLIAGE = /leaf_cluster|pine_bough|foliage/;
 
-// A bark mesh's axis, in world space, derived from the geometry itself: the
-// longest side of the local bounding box is the length, the shortest is the
-// girth. Works for both a plain cylinder and a swept tube, so old and new
-// generators are measured the same way.
+// A bark mesh's axis, in world space. The current generator stashes its exact
+// endpoints (and curve) in userData.axis — use those when present, because a
+// bounding box misplaces the endpoints of a bowed limb and every such error
+// shows up as a phantom defect. The box estimate remains as the fallback for
+// meshes that don't carry the annotation (the legacy generator).
 function segmentOf(mesh) {
+  const axis = mesh.userData?.axis;
+  if (axis) {
+    const toWorld = (p) => p.clone().applyMatrix4(mesh.matrixWorld);
+    return {
+      a: toWorld(axis.a),
+      b: toWorld(axis.b),
+      radius: axis.radius,
+      curve: axis.points ? axis.points.map(toWorld) : null,
+    };
+  }
   const geom = mesh.geometry;
   geom.computeBoundingBox();
   const size = geom.boundingBox.getSize(new THREE.Vector3());
@@ -19,12 +30,12 @@ function segmentOf(mesh) {
 
   const longest = Math.max(size.x, size.y, size.z);
   if (!(longest > 0)) return null;
-  const axis =
+  const boxAxis =
     size.x === longest ? new THREE.Vector3(1, 0, 0)
     : size.y === longest ? new THREE.Vector3(0, 1, 0)
     : new THREE.Vector3(0, 0, 1);
 
-  const half = axis.multiplyScalar(longest / 2);
+  const half = boxAxis.multiplyScalar(longest / 2);
   return {
     a: centre.clone().sub(half).applyMatrix4(mesh.matrixWorld),
     b: centre.clone().add(half).applyMatrix4(mesh.matrixWorld),
@@ -69,12 +80,23 @@ function distanceToSegment(p, a, b) {
 export function diagnose(group) {
   const { bark, foliage } = collect(group);
 
+  // Distance from a point to a piece of bark, following the real curve when
+  // the mesh carries one — the chord of a bowed limb sits well off its path.
+  const distToBark = (p, seg) => {
+    if (!seg.curve) return distanceToSegment(p, seg.a, seg.b);
+    let best = Infinity;
+    for (let i = 0; i < seg.curve.length - 1; i += 1) {
+      best = Math.min(best, distanceToSegment(p, seg.curve[i], seg.curve[i + 1]));
+    }
+    return best;
+  };
+
   // An endpoint is connected when it touches the body of some other piece of
   // bark — the trunk it grows out of, or a child growing out of it. Testing
   // against whole segments rather than just their start points matters: a limb
   // joins the trunk half way up it, nowhere near the trunk's own endpoints.
   const connected = (p, self) =>
-    bark.some((o) => o !== self && distanceToSegment(p, o.a, o.b) < Math.max(o.radius, 0.04) * 2.2);
+    bark.some((o) => o !== self && distToBark(p, o) < Math.max(o.radius, 0.04) * 2.2);
 
   const tips = [];
   for (const seg of bark) {
@@ -89,7 +111,7 @@ export function diagnose(group) {
 
   // A leaf mass with no branch inside or near it is floating unsupported.
   const floatingLeaves = foliage.filter(
-    (f) => !bark.some((seg) => distanceToSegment(f.centre, seg.a, seg.b) < f.radius * 1.5)
+    (f) => !bark.some((seg) => distToBark(f.centre, seg) < f.radius * 1.5)
   ).length;
 
   const box = new THREE.Box3().setFromObject(group);

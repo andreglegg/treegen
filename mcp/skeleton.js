@@ -139,8 +139,10 @@ function buildSpine(s, rand, profile) {
     const sway = Math.sin(t * Math.PI * 1.3 + phase) * wobble * t;
 
     let radius = s.trunkRadius * ((1 - t) ** 0.85 * (1 - tipRadius) + tipRadius);
-    // Root flare: a quick widening in the bottom tenth.
-    if (t < 0.1) radius *= 1 + 0.85 * ((0.1 - t) / 0.1) ** 2;
+    // Root flare, spread over the bottom quarter so it spans several rings of
+    // the tube. A narrower zone lands on a single sample and renders as a
+    // ledge — the trunk looks like it is wearing a boot.
+    if (t < 0.24) radius *= 1 + 0.62 * ((0.24 - t) / 0.24) ** 1.7;
 
     spine.push({
       p: new THREE.Vector3(bend + sway, s.height * t, sway * 0.6),
@@ -312,7 +314,9 @@ function buildBroadleaf(ctx) {
     Math.floor(leafCount / primaries) + (i < leafCount % primaries ? 1 : 0)
   );
 
-  const targets = crownDirections(primaries, rand, profile.flatBottom > 0.4 ? -0.15 : -0.5).map((dir) => {
+  // A flat-bottomed disc keeps every target on or above its equator — one
+  // sagging pad under an acacia's umbrella reads as detached, not natural.
+  const targets = crownDirections(primaries, rand, profile.flatBottom > 0.4 ? 0 : -0.5).map((dir) => {
     const r = hullRadius(dir, rx, ry, rx, profile.exponent, profile.lobe);
     const p = crownCentre.clone().addScaledVector(dir, r);
     if (profile.flatBottom) {
@@ -322,17 +326,37 @@ function buildBroadleaf(ctx) {
     return p;
   });
 
+  // With leaders, branches hang off whichever leader is heading their way.
+  // Attachment order is decided per leader, not globally: every leader must
+  // carry a branch at its very end, or its tip pokes out of the crown as a
+  // bare stick.
+  const pickLeader = (target) => {
+    const dir = new THREE.Vector3(target.x - crownCentre.x, 0, target.z - crownCentre.z).normalize();
+    return leaders.reduce((best, l) => (l.dir.dot(dir) > best.dir.dot(dir) ? l : best), leaders[0]);
+  };
+  const perLeader = new Map(leaders.map((l) => [l, []]));
+  if (leaders.length) {
+    targets.forEach((target, i) => {
+      if (quotas[i] > 0) perLeader.get(pickLeader(target)).push(i);
+    });
+  }
+  const alongFor = new Map();
+  for (const assigned of perLeader.values()) {
+    assigned.forEach((i, j) => {
+      // Last branch of each leader sits at its tip; a single branch goes
+      // straight to the tip.
+      alongFor.set(i, assigned.length === 1 ? 1 : lerp(0.5, 1, j / (assigned.length - 1)));
+    });
+  }
+
   targets.forEach((target, i) => {
     if (quotas[i] === 0) return;
 
     let at;
     let parent = -1;
     if (leaders.length) {
-      // Hang this branch off whichever leader is heading its way, part way
-      // along so the limbs stay visible under the crown.
-      const dir = new THREE.Vector3(target.x - crownCentre.x, 0, target.z - crownCentre.z).normalize();
-      const leader = leaders.reduce((best, l) => (l.dir.dot(dir) > best.dir.dot(dir) ? l : best), leaders[0]);
-      const along = lerp(0.45, 1, (i + 0.5) / primaries);
+      const leader = pickLeader(target);
+      const along = alongFor.get(i) ?? 1;
       const idx = clamp(Math.round(along * (leader.points.length - 1)), 1, leader.points.length - 1);
       at = { p: leader.points[idx], r: leader.radius };
       parent = leader.id;
@@ -361,6 +385,16 @@ function buildBroadleaf(ctx) {
       parent,
     });
   });
+
+  // A leader every target snubbed still cannot end bare — cap it with a leaf
+  // mass of its own.
+  for (const [leader, assigned] of perLeader) {
+    if (assigned.length) continue;
+    const tip = leader.points[leader.points.length - 1];
+    const anchor = makeAnchor(ctx, tip, rand);
+    anchors.push(anchor);
+    branches[leader.id].leafRadius = anchor.radius;
+  }
 }
 
 /**
@@ -382,7 +416,9 @@ function grow(ctx) {
     const outward = clamp(out / (ctx.rx || 1), 0, 1);
     strandAmount = outward;
     aim = target.clone();
-    aim.y -= outward ** 1.2 * profile.curtain * s.height * 0.3 * (0.6 + rand() * 0.6);
+    // Tight jitter: strands of wildly different lengths read as damage, and
+    // one long straggler ruins an otherwise even curtain.
+    aim.y -= outward ** 1.2 * profile.curtain * s.height * 0.3 * (0.72 + rand() * 0.32);
     // Never let the curtain reach the ground: a willow that swallows its own
     // trunk stops reading as a tree at all. The floor allows for the strand
     // hanging below the tip, not just the tip itself.
@@ -501,9 +537,10 @@ function makeAnchor(ctx, point, rand) {
   const dir = new THREE.Vector3().subVectors(point, crownCentre).normalize();
   const height = clamp((point.y - (crownCentre.y - ry)) / (ry * 2 || 1), 0, 1);
   // Blend "faces the sun" with "is high in the crown" — both are reasons a leaf
-  // mass would be bright. Centred on 0.5 so the base tone stays dominant and
-  // the accents read as light rather than as a second canopy colour.
-  const exposure = clamp(0.5 + dir.dot(SUN) * 0.45 + (height - 0.5) * 0.35, 0, 1);
+  // mass would be bright. Sun direction dominates: weighting height too hard
+  // stacks every highlight on the crown's apex, which from above reads as a
+  // yellow bullseye instead of light falling across one side.
+  const exposure = clamp(0.5 + dir.dot(SUN) * 0.52 + (height - 0.5) * 0.18, 0, 1);
 
   // On a curtain species the leaf mass is drawn out into a strand in
   // proportion to how far the tip fell — inner masses stay rounded and form

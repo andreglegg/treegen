@@ -37,7 +37,7 @@ export const presets = {
   meadow: { species: 'round', seed: 4192, height: 6.2, trunkRadius: 0.42, branchCount: 9, branchSpread: 1.15, canopySize: 2.3, leafDensity: 30, leafShape: 0.66, leafStyle: 'clustered', leafSize: 1, leafVariation: 0.5, detail: 1, lean: 0.14, leafPalette: 0, barkPalette: 1 },
   orchard: { species: 'round', seed: 1327, height: 4.6, trunkRadius: 0.34, branchCount: 7, branchSpread: 1.3, canopySize: 2.1, leafDensity: 34, leafShape: 0.5, leafStyle: 'rounded', leafSize: 1.05, leafVariation: 0.4, detail: 0, lean: 0.08, leafPalette: 2, barkPalette: 0 },
   pine: { species: 'pine', seed: 7714, height: 7.8, trunkRadius: 0.32, branchCount: 12, branchSpread: 1.0, canopySize: 2.0, leafDensity: 34, leafShape: 0.8, leafStyle: 'needles', leafSize: 1, leafVariation: 0.5, detail: 1, lean: 0.06, leafPalette: 1, barkPalette: 4 },
-  oak: { species: 'oak', seed: 3048, height: 6.4, trunkRadius: 0.58, branchCount: 11, branchSpread: 1.5, canopySize: 2.5, leafDensity: 38, leafShape: 0.42, leafStyle: 'angular', leafSize: 1.0, leafVariation: 0.6, detail: 1, lean: 0.1, leafPalette: 5, barkPalette: 4 },
+  oak: { species: 'oak', seed: 3048, height: 6.4, trunkRadius: 0.58, branchCount: 11, branchSpread: 1.5, canopySize: 2.5, leafDensity: 44, leafShape: 0.42, leafStyle: 'angular', leafSize: 1.0, leafVariation: 0.6, detail: 1, lean: 0.1, leafPalette: 5, barkPalette: 4 },
   acacia: { species: 'acacia', seed: 6291, height: 7.0, trunkRadius: 0.4, branchCount: 8, branchSpread: 1.7, canopySize: 2.6, leafDensity: 30, leafShape: 0.3, leafStyle: 'clustered', leafSize: 1.15, leafVariation: 0.45, detail: 1, lean: 0.2, leafPalette: 6, barkPalette: 2 },
   willow: { species: 'willow', seed: 8174, height: 6.6, trunkRadius: 0.4, branchCount: 10, branchSpread: 1.4, canopySize: 2.3, leafDensity: 46, leafShape: 0.75, leafStyle: 'clustered', leafSize: 0.82, leafVariation: 0.6, detail: 1, lean: 0.12, leafPalette: 1, barkPalette: 5 },
 };
@@ -217,6 +217,13 @@ export function buildTree(params = {}) {
     barkMat
   );
   trunk.name = 'trunk_segment';
+  // Exact axis for the diagnostics in tools/diagnostics.js — reconstructing
+  // endpoints from a bounding box misplaces them on curved tubes.
+  trunk.userData.axis = {
+    a: skel.spine[0].p.clone(),
+    b: skel.spine[skel.spine.length - 1].p.clone(),
+    radius: skel.spine[0].r,
+  };
   root.add(trunk);
 
   // Branches. Twigs get fewer sides, and any branch entirely hidden inside its
@@ -240,6 +247,14 @@ export function buildTree(params = {}) {
       branch.depth >= 2 ? barkAltMat : barkMat
     );
     mesh.name = `branch_segment_${branchIndex}`;
+    mesh.userData.axis = {
+      a: branch.points[0].clone(),
+      b: branch.points[branch.points.length - 1].clone(),
+      radius: branch.radius,
+      // The curve itself, so defect checks can test against the real path
+      // rather than the chord of a bowed limb.
+      points: branch.points.map((p) => p.clone()),
+    };
     branchIndex += 1;
     root.add(mesh);
   }
