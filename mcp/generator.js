@@ -24,6 +24,10 @@ export const leafPalettes = [
   ['#ba5360', '#742f43', '#eea07e'],
   // Fresh light birch green — appended; palette indices are public API.
   ['#a9c86a', '#79a04c', '#e8e08c'],
+  // Flamboyant flame: a poinciana in bloom is a red canopy, not a green one.
+  ['#e2452f', '#a52618', '#f2a03d'],
+  // Wet tropical green — mango, guango, banyan, palm frond.
+  ['#3f8a4a', '#1f5c34', '#7fc25a'],
 ];
 
 export const barkPalettes = [
@@ -37,6 +41,8 @@ export const barkPalettes = [
   ['#e8e4da', '#3a3733'],
   // Weathered grey-brown — dead wood bleached by sun and rain (snag preset).
   ['#8d8274', '#57504a'],
+  // Pale silver-green — ceiba's buttressed shaft, royal palm's smooth column.
+  ['#a9a894', '#6b6a58'],
 ];
 
 export const presets = {
@@ -64,6 +70,18 @@ export const presets = {
   // at ~70% with a jagged shear (brokenTop), grey weathered bark. Age 0.9 also
   // earns it stag-head dead spikes, which suits a snag fine.
   snag: { species: 'round', seed: 4788, age: 0.9, height: 9.2, trunkRadius: 0.33, branchCount: 8, branchSpread: 1.35, canopySize: 2.6, leafDensity: 0, leafShape: 0.5, leafStyle: 'clustered', leafSize: 1, leafVariation: 0.5, detail: 1, lean: 0.1, brokenTop: true, leafPalette: 0, barkPalette: 7 },
+  // CARIBBEAN SET. Jamaican roadside and yard trees, built from the tropical
+  // profiles plus the existing palm and round builders. Species carry the
+  // silhouette; these presets carry the proportions and colour.
+  coconut: { species: 'palm', seed: 3311, height: 12, trunkRadius: 0.26, branchCount: 9, branchSpread: 1.5, canopySize: 2.6, leafDensity: 18, leafShape: 0.5, leafStyle: 'flat', leafSize: 1.2, leafVariation: 0.35, detail: 1, lean: 0.34, leafPalette: 10, barkPalette: 2 },
+  royal: { species: 'palm', seed: 4820, height: 16, trunkRadius: 0.42, branchCount: 10, branchSpread: 1.3, canopySize: 2.8, leafDensity: 20, leafShape: 0.45, leafStyle: 'flat', leafSize: 1.15, leafVariation: 0.25, detail: 1, lean: 0.03, leafPalette: 10, barkPalette: 8 },
+  mango: { species: 'round', seed: 5140, height: 9, trunkRadius: 0.5, branchCount: 12, branchSpread: 1.45, canopySize: 3.2, leafDensity: 52, leafShape: 0.6, leafStyle: 'clustered', leafSize: 0.95, leafVariation: 0.45, detail: 1, lean: 0.08, leafPalette: 10, barkPalette: 4 },
+  breadfruit: { species: 'round', seed: 6733, height: 10, trunkRadius: 0.45, branchCount: 9, branchSpread: 1.35, canopySize: 3, leafDensity: 22, leafShape: 0.85, leafStyle: 'flat', leafSize: 1.6, leafVariation: 0.5, detail: 1, lean: 0.07, leafPalette: 1, barkPalette: 2 },
+  almond: { species: 'poinciana', seed: 2884, height: 8, trunkRadius: 0.38, branchCount: 11, branchSpread: 1.5, canopySize: 2.8, leafDensity: 30, leafShape: 0.7, leafStyle: 'flat', leafSize: 1.35, leafVariation: 0.5, detail: 1, lean: 0.1, leafPalette: 5, barkPalette: 3 },
+  poinciana: { species: 'poinciana', seed: 8451, height: 9, trunkRadius: 0.44, branchCount: 12, branchSpread: 1.7, canopySize: 3.6, leafDensity: 46, leafShape: 0.35, leafStyle: 'clustered', leafSize: 0.9, leafVariation: 0.5, detail: 1, lean: 0.1, leafPalette: 9, barkPalette: 2 },
+  guango: { species: 'poinciana', seed: 1207, age: 0.75, height: 20, trunkRadius: 1.05, branchCount: 14, branchSpread: 2, canopySize: 6.5, leafDensity: 52, leafShape: 0.4, leafStyle: 'clustered', leafSize: 1, leafVariation: 0.55, detail: 1, lean: 0.06, leafPalette: 10, barkPalette: 4 },
+  ceiba: { species: 'ceiba', seed: 7192, age: 0.8, height: 34, trunkRadius: 1.5, branchCount: 12, branchSpread: 2, canopySize: 8, leafDensity: 44, leafShape: 0.5, leafStyle: 'clustered', leafSize: 1.2, leafVariation: 0.5, detail: 1, lean: 0.02, leafPalette: 5, barkPalette: 8 },
+  banyan: { species: 'banyan', seed: 9930, age: 0.8, height: 14, trunkRadius: 1, branchCount: 13, branchSpread: 1.8, canopySize: 5, leafDensity: 50, leafShape: 0.55, leafStyle: 'clustered', leafSize: 0.9, leafVariation: 0.5, detail: 1, lean: 0.05, leafPalette: 10, barkPalette: 5 },
 };
 
 export const defaultParams = { ...presets.meadow, age: 0.5 };

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { buildSkeleton, SPECIES_PROFILES } from './skeleton.js';
-import { presets, defaultParams, buildTree } from './generator.js';
+import { presets, defaultParams, buildTree, meshStats } from './generator.js';
 
 const SPECIES = Object.keys(SPECIES_PROFILES);
 const make = (over = {}) => buildSkeleton({ ...defaultParams, ...over });
@@ -47,7 +47,7 @@ test('every branch tip carries foliage', () => {
 
 test('broadleaf foliage count honours leafDensity', () => {
   for (const leafDensity of [8, 21, 46, 64]) {
-    for (const species of ['round', 'oak', 'acacia', 'willow', 'birch', 'poplar', 'baobab']) {
+    for (const species of ['round', 'oak', 'acacia', 'willow', 'birch', 'poplar', 'baobab', 'poinciana', 'ceiba', 'banyan']) {
       const skel = make({ species, leafDensity });
       // Forked species may exceed by up to one protective cap per leader: a
       // leader every target snubbed still gets a leaf mass so it cannot end
@@ -556,4 +556,61 @@ test('no mesh is wound inside-out', () => {
     }
   }
   assert.ok(checked > 50, `expected to actually check closed meshes, only saw ${checked}`);
+});
+
+test('the Caribbean species carry their defining silhouettes', () => {
+  const measure = (species, over = {}) => {
+    const skel = buildSkeleton({ ...defaultParams, species, seed: 4242, ...over });
+    const box = new THREE.Box3();
+    for (const a of skel.anchors) {
+      const vertical = a.radius * (a.aspect ?? 1);
+      box.expandByPoint(new THREE.Vector3(a.p.x + a.radius, a.p.y + vertical, a.p.z + a.radius));
+      box.expandByPoint(new THREE.Vector3(a.p.x - a.radius, a.p.y - vertical, a.p.z - a.radius));
+    }
+    const size = box.getSize(new THREE.Vector3());
+    return { skel, width: Math.max(size.x, size.z), crownHeight: size.y, low: box.min.y };
+  };
+
+  // Poinciana: a parasol, markedly wider than its crown is deep, and flatter
+  // than the oak dome it must not be mistaken for.
+  const poinciana = measure('poinciana');
+  assert.ok(
+    poinciana.width / poinciana.crownHeight > 2.4,
+    `poinciana not a parasol (${(poinciana.width / poinciana.crownHeight).toFixed(2)})`
+  );
+
+  // Ceiba: planks at any age, and a crown held high on a long bare shaft.
+  const ceiba = measure('ceiba');
+  assert.ok(ceiba.skel.buttress, 'ceiba has no plank buttresses');
+  assert.ok(ceiba.skel.buttress.amount > 0.2, `ceiba planks too shallow (${ceiba.skel.buttress.amount.toFixed(2)})`);
+  assert.ok(ceiba.low > defaultParams.height * 0.5, 'ceiba crown hangs too low for a cotton tree');
+  const youngCeiba = buildSkeleton({ ...defaultParams, species: 'ceiba', age: 0.3, seed: 4242 });
+  assert.ok(youngCeiba.buttress, 'a ceiba should be born buttressed, not earn it with age');
+
+  // Banyan: pillar roots, thick enough to read as props and reaching the soil.
+  const banyan = buildSkeleton({ ...defaultParams, species: 'banyan', age: 0.8, seed: 4242 });
+  const props = banyan.branches.filter((b) => b.aerial);
+  assert.ok(props.length >= 3, `banyan grew ${props.length} pillar roots`);
+  for (const prop of props) {
+    assert.ok(prop.radius > 0.1, `banyan prop too thin to be a pillar (${prop.radius.toFixed(3)})`);
+    assert.ok(prop.points[prop.points.length - 1].y <= 0, 'banyan prop never reaches the ground');
+  }
+  // An ordinary broadleaf of the same size grows none of them.
+  assert.ok(
+    !buildSkeleton({ ...defaultParams, species: 'round', age: 0.8, seed: 4242 }).branches.some((b) => b.aerial),
+    'a plain round tree sprouted aerial roots'
+  );
+});
+
+test('every Caribbean preset builds a tree with foliage', () => {
+  for (const name of ['coconut', 'royal', 'mango', 'breadfruit', 'almond', 'poinciana', 'guango', 'ceiba', 'banyan']) {
+    const p = { ...defaultParams, ...presets[name] };
+    const skel = buildSkeleton(p);
+    assert.ok(skel.anchors.length > 0, `${name} produced no foliage`);
+    for (const point of everyPoint(skel)) {
+      assert.ok(Number.isFinite(point.x + point.y + point.z), `${name} produced NaN`);
+    }
+    const stats = meshStats(buildTree(p));
+    assert.ok(stats.triangles > 100, `${name} produced almost no geometry (${stats.triangles} tris)`);
+  }
 });

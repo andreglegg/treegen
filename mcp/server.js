@@ -11,7 +11,7 @@ import { buildTree, meshStats, presets, randomParams } from './generator.js';
 import { exportGlb, exportObj, exportGameGlb, exportForestGlb } from './export.js';
 import { mergeTree } from './merge.js';
 
-const SPECIES = ['round', 'oak', 'acacia', 'willow', 'pine', 'birch', 'poplar', 'palm', 'baobab'];
+const SPECIES = ['round', 'oak', 'acacia', 'willow', 'pine', 'birch', 'poplar', 'palm', 'baobab', 'ceiba', 'poinciana', 'banyan'];
 const LEAF_STYLES = ['clustered', 'angular', 'rounded', 'flat', 'needles'];
 const FORMATS = ['glb', 'obj', 'json'];
 const DEFAULT_OUT = path.resolve(process.cwd(), 'treegen-out');
@@ -57,8 +57,8 @@ const paramShape = {
   detail: z.number().int().min(0).max(2).optional().describe('0 low-poly, 1 game-ready, 2 hero'),
   lean: z.number().min(0).max(0.55).optional(),
   brokenTop: z.boolean().optional().describe('Snap the trunk at ~70% height with a jagged shear — a standing-dead snag top'),
-  leafPalette: z.number().int().min(0).max(8).optional(),
-  barkPalette: z.number().int().min(0).max(7).optional(),
+  leafPalette: z.number().int().min(0).max(10).optional(),
+  barkPalette: z.number().int().min(0).max(8).optional(),
 };
 
 server.registerTool(

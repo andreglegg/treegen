@@ -111,6 +111,35 @@ export const SPECIES_PROFILES = {
     rise: 0.85, droop: 0.05, curtain: 0, lobe: 0.12, flatBottom: 0.3, leafAspect: 0.75,
     split: { at: 0.58, count: 6, rise: 0.68, spread: 0.8 },
   },
+  ceiba: {
+    // Silk cotton / kapok — Jamaica's cotton tree. A pale near-columnar shaft
+    // held up by enormous plank buttresses, bare for most of its length, then
+    // a very high, wide, flat-topped crown carried on a few horizontal limbs.
+    // buttressBoost earns it the planks at any age: on a ceiba they are the
+    // whole silhouette, not a veteran's badge.
+    buttressBoost: 0.36,
+    crownY: 0.88, rx: 1.35, ry: 0.24, exponent: 4.5, crownStart: 0.68,
+    rise: 0.5, droop: -0.05, curtain: 0, lobe: 0.1, flatBottom: 0.5, leafAspect: 0.7,
+  },
+  poinciana: {
+    // Royal poinciana / flamboyant. The definitive Caribbean street tree: a
+    // dense flat-topped parasol markedly wider than it is tall, on leaders
+    // that leave the trunk low and spread hard. Flatter and denser than the
+    // acacia — an acacia is a thin disc on a savannah, this is a full canopy.
+    crownY: 0.8, rx: 1.5, ry: 0.3, exponent: 3.6, crownStart: 0.4,
+    rise: 0.85, droop: 0.06, curtain: 0, lobe: 0.12, flatBottom: 0.42, leafAspect: 0.55,
+    split: { at: 0.22, count: 3, rise: 0.5, spread: 0.55 },
+  },
+  banyan: {
+    // Strangler fig. A low, immense, spreading dome whose limbs drop aerial
+    // roots that thicken into pillars and become trunks in their own right —
+    // pillarRoots switches the existing aerial-root pass from a giant's thin
+    // hanging cords to a fig's props.
+    pillarRoots: true,
+    crownY: 0.72, rx: 1.25, ry: 0.42, exponent: 2.6, crownStart: 0.38,
+    rise: 0.3, droop: 0.28, curtain: 0, lobe: 0.2, flatBottom: 0.2, leafAspect: 0.85,
+    split: { at: 0.28, count: 3, rise: 0.35, spread: 0.6 },
+  },
 };
 
 export function rng(seed) {
@@ -494,7 +523,13 @@ export function buildSkeleton(params) {
   // The star's phase lives on its own stream so giving mid-age trees a star
   // (they used to have none) cannot shift the main stream.
   const basePhase = rng(subSeed(Number(s.seed), 31))() * Math.PI * 2;
-  const plank = fx.buttress > 0.03;
+  // A species can be born buttressed rather than earning it with age and size
+  // — a ceiba's planks are its silhouette from young onward.
+  const buttressAmount = Math.min(
+    0.62,
+    fx.buttress + (profile.buttressBoost ?? 0) * (0.55 + fx.age * 0.45)
+  );
+  const plank = buttressAmount > 0.03;
   const rooted = fx.age >= 0.35 && Number(s.detail) >= 1 && profile.builder !== 'palm';
   const starLobes = plank ? 5 : 3 + (fx.giant > 0.3 ? 1 : 0);
   const toe = rooted ? 0.55 + fx.age * 0.45 : 0;
@@ -564,12 +599,17 @@ export function buildSkeleton(params) {
   // from major limbs to the ground. Ends sink below grade (y < 0) so the
   // diagnostics' existing ground rule (endpoints at y <= 0.25 are supported by
   // the soil) covers them without change. Also drawn after all prior draws.
-  if (s.species !== 'pine' && fx.age >= 0.6 && s.height > 20) {
+  // A pillarRoots species (the fig) does this at any size and from mid-life:
+  // props are what a banyan IS, not a cue it earns by growing huge.
+  const pillars = Boolean(profile.pillarRoots);
+  if (s.species !== 'pine' && (pillars ? fx.age >= 0.3 : fx.age >= 0.6 && s.height > 20)) {
     const limbs = branches.filter(
       (b) => b.depth === 0 && !b.root && !b.twig && !b.dead && peakY(b) > s.height * 0.3
     );
     if (limbs.length) {
-      const count = 2 + Math.floor(rand() * 3); // 2-4
+      // Same single draw either way, so adding the fig cannot shift any
+      // existing species' stream.
+      const count = pillars ? 3 + Math.floor(rand() * 4) : 2 + Math.floor(rand() * 3);
       for (let i = 0; i < count; i += 1) {
         const limb = limbs[i % limbs.length];
         const idx = clamp(
@@ -583,7 +623,10 @@ export function buildSkeleton(params) {
           -0.05,
           start.z + (rand() - 0.5) * 0.4
         );
-        const radius = Math.max(0.05, s.trunkRadius * 0.08);
+        // Props carry weight, cords do not: a pillar is a young trunk.
+        const radius = pillars
+          ? Math.max(0.1, Number(s.trunkRadius) * (0.22 + fx.age * 0.22))
+          : Math.max(0.05, s.trunkRadius * 0.08);
         branches.push({
           // Near-straight: barely bowed, no droop — a taut hanging root.
           points: curveBranch(start, end, 0.015, 0, 4),
@@ -608,7 +651,7 @@ export function buildSkeleton(params) {
     // mesher turns this into a star-shaped base cross-section that rounds out
     // to circular by `fadeT` of trunk height.
     buttress: plank
-      ? { amount: fx.buttress, lobes: starLobes, phase: basePhase, fadeT: 0.16, toe }
+      ? { amount: buttressAmount, lobes: starLobes, phase: basePhase, fadeT: 0.16, toe }
       : null,
     // Subtle base star for root-age trees without planks. `toe` (on either
     // star) is the strong, fast-fading extra spread that carves root toes
