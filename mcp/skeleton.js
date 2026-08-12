@@ -460,48 +460,20 @@ export function buildSkeleton(params) {
     });
   }
 
-  // Root spurs: surface roots that CONTINUE the trunk's base star into the
-  // ground — each spur runs along a ridge of the star cross-section, so it
-  // reads as the trunk's own flute running out into the soil rather than a
-  // tube stuck on the side. Mature and old trees only — saplings haven't
-  // earned them — and drawn LAST so any extra rand() calls can't shift the
-  // randomness above (the same seed keeps the same tree, plus roots).
-  // Palms are excluded: a palm's base is a smooth column, and root spurs on it
-  // read as tentacles.
+  // Root zone: no separate spur tubes — a tube poked into the trunk always
+  // reads as a stick stuck on, however carefully it is aligned. Instead the
+  // trunk's OWN bottom rings splay into toes: the base star's `toe` term
+  // spreads the lobe ridges hard at the ground ring and relaxes them within
+  // the first spine segment, so the roots are literally the trunk mesh
+  // running out into the soil. Mature and old trees only — saplings haven't
+  // earned them. Palms are excluded: a palm's base is a smooth column.
   // The star's phase lives on its own stream so giving mid-age trees a star
-  // (they used to have none) cannot shift the main stream either.
+  // (they used to have none) cannot shift the main stream.
   const basePhase = rng(subSeed(Number(s.seed), 31))() * Math.PI * 2;
   const plank = fx.buttress > 0.03;
-  const spurring = fx.age >= 0.35 && Number(s.detail) >= 1 && profile.builder !== 'palm';
+  const rooted = fx.age >= 0.35 && Number(s.detail) >= 1 && profile.builder !== 'palm';
   const starLobes = plank ? 5 : 3 + (fx.giant > 0.3 ? 1 : 0);
-  if (spurring) {
-    const at = spineAt(spine, 0.012);
-    for (let i = 0; i < starLobes; i += 1) {
-      // Per-spur stream — see subSeed().
-      const rrand = rng(subSeed(Number(s.seed), 29, i));
-      // Lobe ridge (cos(a·lobes + phase) = 1) mapped from the mesher's base
-      // ring frame (near-vertical tangent, X seed) to a world azimuth: a
-      // ring angle a lands at world angle -a - PI/2.
-      const aRing = (Math.PI * 2 * i - basePhase) / starLobes;
-      const theta = -aRing - Math.PI / 2;
-      const dir = new THREE.Vector3(Math.cos(theta), 0, Math.sin(theta));
-      // Short and stout: surface roots hug the trunk. Long thin spurs read as
-      // spider legs. Tips sink slightly below grade so they end IN the ground,
-      // and the centerline starts at the ground ring and only descends — the
-      // old higher attachment left spurs hovering level like a caltrop.
-      const reach = at.r * (1.05 + rrand() * 0.5) * (1 + fx.age * 0.35);
-      const end = at.p.clone().addScaledVector(dir, reach).setY(-0.05);
-      branches.push({
-        points: curveBranch(at.p.clone(), end, -0.06, 0, 4),
-        radius: at.r * 0.45,
-        endRadius: at.r * 0.12,
-        depth: 0,
-        parent: -1,
-        terminal: false,
-        root: true,
-      });
-    }
-  }
+  const toe = rooted ? 0.55 + fx.age * 0.45 : 0;
 
   // STAG-HEAD DEADWOOD: ancient broadleaf trees carry a few bare tapered
   // spikes rising above the crown from the topmost primaries — the classic
@@ -611,13 +583,14 @@ export function buildSkeleton(params) {
     // mesher turns this into a star-shaped base cross-section that rounds out
     // to circular by `fadeT` of trunk height.
     buttress: plank
-      ? { amount: fx.buttress, lobes: starLobes, phase: basePhase, fadeT: 0.16 }
+      ? { amount: fx.buttress, lobes: starLobes, phase: basePhase, fadeT: 0.16, toe }
       : null,
-    // Subtle base star for trees that carry root spurs but no planks: the
-    // ridges the spurs continue. Consumed by the mesher exactly like buttress
-    // (buttress wins when both would apply — they never stack).
-    rootFlare: !plank && spurring
-      ? { amount: 0.1 + fx.age * 0.06, lobes: starLobes, phase: basePhase, fadeT: 0.09 }
+    // Subtle base star for root-age trees without planks. `toe` (on either
+    // star) is the strong, fast-fading extra spread that carves root toes
+    // into the trunk's bottom rings. Buttress wins when both would apply —
+    // they never stack.
+    rootFlare: !plank && rooted
+      ? { amount: 0.1 + fx.age * 0.06, lobes: starLobes, phase: basePhase, fadeT: 0.09, toe }
       : null,
     params: s,
   };
@@ -1048,13 +1021,15 @@ function buildConifer(ctx) {
       // Start on the trunk's centerline so the whorl branch is buried at its
       // root and emerges through the bark.
       const start = at.p.clone();
-      // Deliberately long enough to pierce the skirt's sloped side — the tick
-      // of a branch tip breaking the cone is what keeps the pine from reading
-      // as stacked lampshades — while staying above the bottom rim, where a
-      // tip would dangle in open air. The 0.88/0.16 pair also keeps the chord
-      // safely past the mesher's swallowed-twig cull; an earlier 0.78/0.30
-      // survived that cull by 0.2% and quietly died when retuned.
-      const end = start.clone().addScaledVector(dir, reach * 0.88).setY(at.p.y - reach * 0.16);
+      // Leafy tree: deliberately SHORT of the skirt surface, so the mesher's
+      // swallowed-branch cull (chord < leafRadius * 0.85) deletes the wood —
+      // a real pine hides its whorl wood inside the needles; the piercing
+      // ticks the earlier design used read as debris stuck to the tiers. The
+      // skeleton keeps the branches so foliage still sits on branch tips.
+      // Bare tree: full length as before — the whorls ARE the silhouette.
+      const stretch = ctx.bare ? 0.88 : 0.55;
+      const dropY = ctx.bare ? 0.16 : 0.1;
+      const end = start.clone().addScaledVector(dir, reach * stretch).setY(at.p.y - reach * dropY);
       const id = branches.length;
       branches.push({
         points: curveBranch(start, end, -0.05, profile.droop * 0.5, 3),

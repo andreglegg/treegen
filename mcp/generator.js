@@ -334,10 +334,15 @@ export function buildTree(params = {}) {
   const buttressFn = star
     ? (t01, angle, totalRings) => {
         const spineT = t01 * (totalRings / spineFrac);
+        // Root toes: a much stronger spread that lives almost entirely on the
+        // ground ring and dies within the first spine segment — the trunk's
+        // own foot splaying into the soil, seamless because it IS the trunk.
+        const toeFade = Math.max(0, 1 - spineT / 0.16);
         const fade = Math.max(0, 1 - spineT / star.fadeT);
-        if (fade <= 0) return 1;
+        const amount = star.amount * fade ** 1.5 + (star.toe ?? 0) * toeFade ** 2.2;
+        if (amount <= 0) return 1;
         const lobe = Math.max(0, Math.cos(angle * star.lobes + star.phase)) ** 3;
-        return 1 + star.amount * lobe * fade ** 1.5;
+        return 1 + amount * lobe;
       }
     : null;
   // Giants deserve extra silhouette resolution at the base where the player
@@ -393,20 +398,13 @@ export function buildTree(params = {}) {
     // deliberate dead spikes (which END in open air) from broken branches —
     // and the shadow bark tone, because dead wood is darker than live bark.
     const name = head.dead ? `dead_branch_${deadIndex}` : `branch_segment_${branchIndex}`;
-    // Root spurs are vertically stretched blades where they leave the trunk,
-    // rounding out toward the tip — the trunk's flute continuing into the
-    // soil, then relaxing. Deterministic, so no stream impact.
-    const rootRadial = head.root
-      ? (t01, a) => 1 + 0.5 * (1 - t01) * Math.abs(Math.sin(a))
-      : null;
     addBark(
       name,
       pts,
       radii,
       sides,
       'end',
-      head.dead || head.depth >= 2 ? barkAltMat : barkMat,
-      rootRadial
+      head.dead || head.depth >= 2 ? barkAltMat : barkMat
     );
     if (head.dead) deadIndex += 1;
     else branchIndex += 1;

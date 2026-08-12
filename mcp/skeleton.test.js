@@ -364,25 +364,29 @@ test('giant old broadleaf drops aerial roots to the ground', () => {
   assert.ok(!make({ species: 'oak', height: 30, age: 0.4, trunkRadius: 1.1 }).branches.some((b) => b.aerial), 'young giant grew aerial roots');
 });
 
-test('root spurs start at the ground ring and continue the base star ridges', () => {
+test('root toes are carved into the trunk mesh itself', () => {
   const skel = make({ species: 'oak', seed: 429757 });
   const star = skel.buttress ?? skel.rootFlare;
-  assert.ok(star, 'a root-bearing tree carries a base star');
-  const roots = skel.branches.filter((b) => b.root);
-  assert.equal(roots.length, star.lobes, 'one spur per lobe');
-  for (const b of roots) {
-    const p0 = b.points[0];
-    assert.ok(p0.y <= Number(skel.params.height) * 0.03, `spur attaches high: y=${p0.y}`);
-    const p1 = b.points[1];
-    const theta = Math.atan2(p1.z - p0.z, p1.x - p0.x);
-    // Invert the mesher's base ring frame (near-vertical tangent, X seed):
-    // ring angle a maps to world azimuth -a - PI/2.
-    const aRing = -theta - Math.PI / 2;
-    const ridge = Math.cos(aRing * star.lobes + star.phase);
-    assert.ok(ridge > 0.95, `spur off the lobe ridge (cos=${ridge.toFixed(3)})`);
-    const tip = b.points[b.points.length - 1];
-    assert.ok(tip.y < 0, 'spur tip should sink below grade');
+  assert.ok(star && star.toe > 0.5, 'root-age tree carries a toe spread');
+  assert.equal(skel.branches.filter((b) => b.root).length, 0, 'no separate spur tubes');
+
+  const group = buildTree({ species: 'oak', seed: 429757 });
+  let trunk = null;
+  group.traverse((c) => { if (c.name === 'trunk_segment') trunk = c; });
+  assert.ok(trunk, 'trunk mesh present');
+  const pos = trunk.geometry.getAttribute('position');
+  let footR = 0;
+  let waistR = 0;
+  for (let i = 0; i < pos.count; i += 1) {
+    const r = Math.hypot(pos.getX(i), pos.getZ(i));
+    const y = pos.getY(i);
+    if (y < 0.05) footR = Math.max(footR, r);
+    if (y > 1.2 && y < 2.2) waistR = Math.max(waistR, r);
   }
+  assert.ok(
+    footR > waistR * 1.6,
+    `toes should splay past the waist (foot ${footR.toFixed(2)} vs waist ${waistR.toFixed(2)})`
+  );
 });
 
 test('mid-age trees get a subtle root flare, giants keep plank buttresses', () => {
@@ -413,4 +417,16 @@ test('conifer whorl stubs stay twig-thin at giant scale', () => {
   const small = make(presets.pine);
   const smallWhorl = small.branches.filter((b) => b.terminal && !b.root && !b.twig && b.depth === 0);
   for (const b of smallWhorl) assert.ok(b.radius < 0.14, 'cap must not bind on a small pine');
+});
+
+test('leafy pine shows no wood through the skirts; bare pine keeps its whorls', () => {
+  const leafy = buildTree(presets.giant);
+  let leafyWood = 0;
+  leafy.traverse((c) => { if (/^branch_segment_/.test(c.name)) leafyWood += 1; });
+  assert.equal(leafyWood, 0, 'no branch wood should pierce or dangle under the foliage tiers');
+
+  const bare = buildTree({ ...presets.giant, leafDensity: 0 });
+  let bareWood = 0;
+  bare.traverse((c) => { if (/^branch_segment_/.test(c.name)) bareWood += 1; });
+  assert.ok(bareWood > 10, `bare pine should keep whorl branches, got ${bareWood}`);
 });
