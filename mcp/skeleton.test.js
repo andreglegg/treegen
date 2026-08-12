@@ -323,14 +323,17 @@ test('snag preset: zero foliage and a jagged broken top', () => {
   assert.ok(lastR > shearR * 0.3, `snag tip tapers to a point (${lastR} vs ${shearR})`);
 });
 
-test('ancient broadleaf grows stag-head dead spikes above the crown', () => {
+test('ancient broadleaf grows stag-head deadwood inside the crown', () => {
   const skel = make({ species: 'oak', age: 1 });
   const dead = skel.branches.filter((b) => b.dead);
   assert.ok(dead.length >= 2 && dead.length <= 4, `expected 2-4 dead spikes, got ${dead.length}`);
   const crownTop = skel.crown.centre.y + skel.crown.ry;
   for (const spike of dead) {
     const tip = spike.points[spike.points.length - 1];
-    assert.ok(tip.y > crownTop, 'dead spike does not rise above the crown');
+    // Deadwood is glimpsed THROUGH the canopy, never over it — a bare tube
+    // above the crown reads as an antenna at any distance.
+    assert.ok(tip.y <= crownTop + 1e-6, 'dead spike rises above the crown');
+    assert.ok(tip.y > spike.points[0].y, 'dead spike does not rise at all');
     assert.ok(spike.endRadius < 0.02, 'dead spike does not taper to a point');
     const parent = skel.branches[spike.parent];
     assert.ok(parent, 'dead spike has no source limb');
@@ -429,4 +432,128 @@ test('leafy pine shows no wood through the skirts; bare pine keeps its whorls', 
   let bareWood = 0;
   bare.traverse((c) => { if (/^branch_segment_/.test(c.name)) bareWood += 1; });
   assert.ok(bareWood > 10, `bare pine should keep whorl branches, got ${bareWood}`);
+});
+
+test('no bare wood shows above the crown: stag-head spikes stay stubs', () => {
+  // Ancient broadleaves earn a retrenchment cue, but a thin tube rising above
+  // the canopy reads as an antenna, not deadwood.
+  for (const over of [{ age: 0.78 }, { age: 0.85 }, { age: 1 }]) {
+    for (const species of ['round', 'oak', 'willow', 'birch', 'baobab']) {
+      const p = { ...defaultParams, species, seed: 1234, ...over };
+      const skel = buildSkeleton(p);
+      let foliageTop = -Infinity;
+      for (const a of skel.anchors) foliageTop = Math.max(foliageTop, a.p.y + a.radius * (a.aspect ?? 1));
+      const group = buildTree(p);
+      group.traverse((c) => {
+        if (!c.isMesh || /leaf_cluster|pine_bough/.test(c.name)) return;
+        const pos = c.geometry.getAttribute('position');
+        for (let i = 0; i < pos.count; i += 1) {
+          assert.ok(
+            pos.getY(i) <= foliageTop + 0.02,
+            `${species} age ${over.age}: ${c.name} spikes ${(pos.getY(i) - foliageTop).toFixed(2)}m above the crown`
+          );
+        }
+      });
+    }
+  }
+});
+
+test('conifer leader dies inside the top skirt — no bare tip poking out', () => {
+  for (const [label, over] of [
+    ['pine preset', presets.pine],
+    ['giant', presets.giant],
+    ['tall pine', { species: 'pine', height: 42, trunkRadius: 1.25, canopySize: 7, age: 0.85, seed: 5107 }],
+  ]) {
+    const p = { ...defaultParams, ...over };
+    const skel = buildSkeleton(p);
+    const skirts = skel.anchors.filter((a) => a.skirt);
+    const top = skirts[skirts.length - 1];
+    const apexY = top.p.y + top.height / 2;
+    const baseY = top.p.y - top.height / 2;
+    const group = buildTree(p);
+    let trunk = null;
+    group.traverse((c) => { if (c.name === 'trunk_segment') trunk = c; });
+    const pos = trunk.geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i += 1) {
+      const y = pos.getY(i);
+      if (y < baseY) continue;
+      const coneR = y >= apexY ? 0 : top.radius * ((apexY - y) / (apexY - baseY));
+      const d = Math.hypot(pos.getX(i) - top.p.x, pos.getZ(i) - top.p.z);
+      assert.ok(d <= coneR, `${label}: trunk juts ${(d - coneR).toFixed(3)}m outside the top skirt`);
+    }
+  }
+});
+
+test('no degenerate triangles anywhere, in any species or detail level', () => {
+  for (const species of SPECIES) {
+    for (const detail of [0, 1, 2]) {
+      const group = buildTree({ ...defaultParams, species, detail, seed: 1234 });
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+      group.traverse((mesh) => {
+        if (!mesh.isMesh) return;
+        const pos = mesh.geometry.getAttribute('position');
+        const idx = mesh.geometry.index;
+        const tris = idx ? idx.count / 3 : pos.count / 3;
+        let degen = 0;
+        for (let t = 0; t < tris; t += 1) {
+          const i0 = idx ? idx.getX(t * 3) : t * 3;
+          const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
+          const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+          a.fromBufferAttribute(pos, i0); b.fromBufferAttribute(pos, i1); c.fromBufferAttribute(pos, i2);
+          if (b.clone().sub(a).cross(c.clone().sub(a)).length() * 0.5 < 1e-9) degen += 1;
+        }
+        assert.equal(degen, 0, `${species} detail${detail}: ${mesh.name} has ${degen}/${tris} zero-area triangles`);
+      });
+    }
+  }
+});
+
+test('no mesh is wound inside-out', () => {
+  // Winding decides which side survives backface culling. An inverted mesh
+  // is invisible from outside — a flipped skirt cone silently deletes a
+  // whole pine's foliage, which is exactly what a hand-built cone once did.
+  // Signed volume is the test that answers this and nothing else: positive
+  // for outward winding, negative for inward, and unbothered by the creases
+  // that make per-face normal comparisons cry wolf. It is only meaningful on
+  // a closed surface, so open meshes — branch tubes, which are deliberately
+  // uncapped where they are buried in their parent — are skipped rather than
+  // measured wrongly. Every hand-built primitive is closed and does get read.
+  let checked = 0;
+  for (const species of SPECIES) {
+    for (const detail of [0, 1, 2]) {
+      const group = buildTree({ ...defaultParams, species, detail, seed: 1234 });
+      group.traverse((mesh) => {
+        if (!mesh.isMesh) return;
+        const pos = mesh.geometry.getAttribute('position');
+        const idx = mesh.geometry.index;
+        const tris = idx ? idx.count / 3 : pos.count / 3;
+        const at = (i) => (idx ? idx.getX(i) : i);
+        const key = (i) => {
+          const v = at(i);
+          return `${pos.getX(v).toFixed(4)},${pos.getY(v).toFixed(4)},${pos.getZ(v).toFixed(4)}`;
+        };
+        const edges = new Map();
+        for (let t = 0; t < tris; t += 1) {
+          const k = [key(t * 3), key(t * 3 + 1), key(t * 3 + 2)];
+          for (let e = 0; e < 3; e += 1) {
+            const id = [k[e], k[(e + 1) % 3]].sort().join('|');
+            edges.set(id, (edges.get(id) ?? 0) + 1);
+          }
+        }
+        if ([...edges.values()].some((count) => count !== 2)) return; // open surface
+
+        const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+        let volume = 0;
+        for (let t = 0; t < tris; t += 1) {
+          a.fromBufferAttribute(pos, at(t * 3));
+          b.fromBufferAttribute(pos, at(t * 3 + 1));
+          c.fromBufferAttribute(pos, at(t * 3 + 2));
+          volume += a.dot(b.clone().cross(c)) / 6;
+        }
+        checked += 1;
+        assert.ok(volume > 0, `${species} detail${detail}: ${mesh.name} is inside-out (volume ${volume.toFixed(4)})`);
+      });
+    }
+  }
+  assert.ok(checked > 50, `expected to actually check closed meshes, only saw ${checked}`);
 });

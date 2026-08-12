@@ -2,7 +2,7 @@
 // exportForestGlb. Run with `npm test` (node --test).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTree, meshStats, presets } from './generator.js';
+import { buildTree, meshStats, presets, defaultParams } from './generator.js';
 import { mergeTree } from './merge.js';
 import { exportGameGlb, exportForestGlb } from './export.js';
 
@@ -81,4 +81,47 @@ test('different seedBase changes the forest', async () => {
   const a = await exportForestGlb({ params: presets.meadow, count: 3, seedBase: 10 });
   const b = await exportForestGlb({ params: presets.meadow, count: 3, seedBase: 11 });
   assert.ok(!Buffer.from(a).equals(Buffer.from(b)), 'expected different kits for different seedBase');
+});
+
+test('merged meshes carry a wind mask in UV1: rigid at the base, loose at the tips', () => {
+  const merged = mergeTree(buildTree({ ...defaultParams, species: 'oak', seed: 1234 }));
+  let bark = null, foliage = null;
+  merged.traverse((c) => {
+    if (c.name === 'bark') bark = c;
+    if (c.name === 'foliage') foliage = c;
+  });
+  assert.ok(bark && foliage, 'merge produces bark and foliage');
+
+  for (const mesh of [bark, foliage]) {
+    const uv1 = mesh.geometry.getAttribute('uv1');
+    assert.ok(uv1, `${mesh.name} carries a uv1 wind attribute`);
+    assert.equal(uv1.itemSize, 2, 'uv1 is (stiffness, phase)');
+    for (let i = 0; i < uv1.count; i += 1) {
+      const s = uv1.getX(i), p = uv1.getY(i);
+      assert.ok(s >= 0 && s <= 1, `${mesh.name} stiffness out of range: ${s}`);
+      assert.ok(p >= 0 && p <= 1, `${mesh.name} phase out of range: ${p}`);
+    }
+  }
+
+  // The trunk foot must not sway; the outer canopy must.
+  const pos = bark.geometry.getAttribute('position');
+  const uv1 = bark.geometry.getAttribute('uv1');
+  let footMax = 0;
+  for (let i = 0; i < pos.count; i += 1) if (pos.getY(i) < 0.3) footMax = Math.max(footMax, uv1.getX(i));
+  assert.ok(footMax < 0.15, `trunk foot should be rigid, got ${footMax.toFixed(2)}`);
+
+  const fuv = foliage.geometry.getAttribute('uv1');
+  let leafMax = 0;
+  for (let i = 0; i < fuv.count; i += 1) leafMax = Math.max(leafMax, fuv.getX(i));
+  assert.ok(leafMax > 0.8, `outer foliage should sway freely, got ${leafMax.toFixed(2)}`);
+});
+
+test('wind phase varies between foliage masses so leaves do not sway in unison', () => {
+  const merged = mergeTree(buildTree({ ...defaultParams, species: 'oak', seed: 1234 }));
+  let foliage = null;
+  merged.traverse((c) => { if (c.name === 'foliage') foliage = c; });
+  const uv1 = foliage.geometry.getAttribute('uv1');
+  const phases = new Set();
+  for (let i = 0; i < uv1.count; i += 1) phases.add(uv1.getY(i).toFixed(3));
+  assert.ok(phases.size > 5, `expected distinct per-cluster phases, got ${phases.size}`);
 });

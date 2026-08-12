@@ -451,6 +451,30 @@ export function buildSkeleton(params) {
 
   if (s.species === 'pine') {
     buildConifer({ s, rand, spine, profile, branches, anchors, crownCentre, bare });
+    // The leader must DIE INSIDE the top skirt. Clearing it vertically is not
+    // enough: the skirt is a cone, so near its apex it is thinner than the
+    // trunk and a bare brown tip juts out through the needles — the taller the
+    // tree, the worse, because tip radius scales with trunkRadius while the
+    // cone does not. Trim the spine (after the whorls are placed, so no branch
+    // is orphaned) to the height where the cone still comfortably swallows it.
+    const skirts = anchors.filter((a) => a.skirt);
+    const top = skirts[skirts.length - 1];
+    if (top) {
+      const apexY = top.p.y + top.height / 2;
+      const baseY = top.p.y - top.height / 2;
+      // Walk down the spine for the highest sample whose ring — offset from
+      // the cone's axis by the trunk's lean — still fits inside the cone with
+      // margin for both meshes being faceted. Solving algebraically off the
+      // tip radius undershoots, because trimming lands on thicker trunk.
+      let cut = baseY;
+      for (let i = spine.length - 1; i >= 0; i -= 1) {
+        const { p, r } = spine[i];
+        if (p.y <= baseY) break;
+        const coneR = top.radius * ((apexY - p.y) / (apexY - baseY));
+        if (Math.hypot(p.x - top.p.x, p.z - top.p.z) + r * 1.35 <= coneR) { cut = p.y; break; }
+      }
+      spine = trimSpine(spine, cut);
+    }
   } else if (profile.builder === 'palm') {
     buildPalm({ s, rand, spine, profile, branches, anchors, bare });
   } else {
@@ -500,18 +524,19 @@ export function buildSkeleton(params) {
         1, limb.points.length - 1
       );
       const start = limb.points[idx].clone(); // ON the limb centerline
-      // Antler proportions. On a bare or broken-top tree the whole spike is
-      // visible, so it stays short — forcing it above the phantom crown of
-      // the unbroken tree is what produced flag poles over the snag. On a
-      // leafy tree the crown hides the spike's body and only the part above
-      // the hull shows, so it rises as far as the crown demands — with the
-      // outward lean scaled to the ACTUAL rise, so a tall spike leans like an
-      // antler instead of standing like an antenna.
+      // Antler proportions, but NEVER out of the top of the canopy: a bare
+      // tapered tube rising above the crown reads as an antenna at every
+      // distance, whatever its lean, and no amount of tuning the lean fixed
+      // that. On a leafy tree the spike now stops AT the crown hull, so it is
+      // deadwood glimpsed through the foliage — which is what a retrenching
+      // veteran looks like from outside. A bare or broken-top tree has no
+      // crown to hide in and the spike is the whole point, so it keeps its
+      // full length there.
       const len = crownTop * (0.14 + rand() * 0.08);
       const a = rand() * Math.PI * 2;
       const rise = bare || s.brokenTop
         ? len * 0.8
-        : Math.max(len * 0.8, crownTop + len * 0.3 - start.y);
+        : Math.min(len * 0.8, Math.max(0, crownTop - start.y));
       const lean = Math.max(len * 0.55, rise * 0.4);
       const end = new THREE.Vector3(
         start.x + Math.cos(a) * lean,

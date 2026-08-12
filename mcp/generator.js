@@ -123,6 +123,22 @@ function tubeGeometry(points, radii, sides, caps = true, radial = null) {
   const uv = [];
   const index = [];
 
+  // Tight bends fold the tube through itself: where a turn is sharper than the
+  // tube is thick, the rings on the inside of the bend cross over and those
+  // faces end up back-to-front — a pinch that shades wrong and z-fights. Cap
+  // each ring at the radius the local curvature can carry. Copy first; the
+  // caller's radii belong to the skeleton.
+  radii = radii.slice();
+  for (let i = 1; i < n - 1; i += 1) {
+    const incoming = points[i].clone().sub(points[i - 1]);
+    const outgoing = points[i + 1].clone().sub(points[i]);
+    const shortest = Math.min(incoming.length(), outgoing.length());
+    const turn = incoming.angleTo(outgoing);
+    if (!(turn > 1e-4) || shortest < 1e-9) continue;
+    const maxRadius = shortest / 2 / Math.tan(Math.min(turn, Math.PI * 0.49) / 2);
+    radii[i] = Math.min(radii[i], maxRadius * 0.9);
+  }
+
   for (let i = 0; i < n; i += 1) {
     if (i > 0) {
       normal.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(tangents[i - 1], tangents[i]));
@@ -187,12 +203,55 @@ function tubeGeometry(points, radii, sides, caps = true, radial = null) {
   geom.setAttribute('normal', new THREE.Float32BufferAttribute(normalAttr, 3));
   geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geom.setIndex(index);
+  // The analytic normals above are the ring's radial directions, which are
+  // only correct on a surface of revolution. A radial function (buttress
+  // flanges, root toes, bark fluting) pushes the surface off that revolution,
+  // so its ridges and valleys would shade as if they were not there — and
+  // where the spread is strong, faces end up lit from behind. Derive the
+  // normals from the geometry that was actually built.
+  if (radial) geom.computeVertexNormals();
   return geom;
 }
 
 // Subdivision is capped at one level for every style: a twice-subdivided
 // icosahedron is a near-sphere, and smooth balloons are the opposite of the
 // chunky faceted look this generator is for. Higher detail tiers spend their
+/**
+ * A cone as an apex fan plus a base fan — `sides * 2` triangles, none of them
+ * degenerate. three's ConeGeometry builds its torso as quads and collapses the
+ * top edge to a point, so a third of every cone it emits is zero-area: dead
+ * weight in the vertex pipeline that mesh validators and lightmap bakers flag.
+ * Matches ConeGeometry's frame: radius 1, height `height`, centred on y=0.
+ */
+function coneGeometry(sides, height = 1) {
+  const half = height / 2;
+  const position = [];
+  const uv = [];
+  const ring = [];
+  for (let i = 0; i < sides; i += 1) {
+    const a = (i / sides) * Math.PI * 2;
+    ring.push(new THREE.Vector3(Math.cos(a), -half, Math.sin(a)));
+  }
+  const apex = new THREE.Vector3(0, half, 0);
+  const centre = new THREE.Vector3(0, -half, 0);
+  for (let i = 0; i < sides; i += 1) {
+    const a = ring[i];
+    const b = ring[(i + 1) % sides];
+    // Ring runs counter-clockwise seen from +Y, so the side wants (apex, b, a)
+    // and the base the reverse for both to face outward. Get this backwards
+    // and the cone renders inside-out — invisible under backface culling.
+    position.push(apex.x, apex.y, apex.z, b.x, b.y, b.z, a.x, a.y, a.z);
+    uv.push(0.5, 1, (i + 1) / sides, 0, i / sides, 0);
+    position.push(centre.x, centre.y, centre.z, a.x, a.y, a.z, b.x, b.y, b.z);
+    uv.push(0.5, 0.5, i / sides, 0, (i + 1) / sides, 0);
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geom.computeVertexNormals();
+  return geom;
+}
+
 // triangles on structure (accent blobs, root spurs, fluting) instead.
 function leafGeometry(style, detail) {
   const d = clamp(detail, 0, 1);
@@ -204,7 +263,7 @@ function leafGeometry(style, detail) {
     case 'flat':
       return new THREE.IcosahedronGeometry(1, 0);
     case 'needles':
-      return new THREE.ConeGeometry(1, 1.8, 5 + d * 2, 1);
+      return coneGeometry(5 + d * 2, 1.8);
     case 'clustered':
     default:
       return new THREE.IcosahedronGeometry(1, d);
@@ -431,7 +490,7 @@ export function buildTree(params = {}) {
   // as a bunch of pods.
   const blob = leafGeometry(s.leafStyle, skel.profile.curtain ? Math.max(0, detail - 1) : detail);
   const skirt = skel.anchors.some((a) => a.skirt)
-    ? new THREE.ConeGeometry(1, 1, trunkSides + 2, 1)
+    ? coneGeometry(trunkSides + 2)
     : null;
 
   anchors.forEach((anchor, i) => {
