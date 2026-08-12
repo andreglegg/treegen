@@ -460,28 +460,41 @@ export function buildSkeleton(params) {
     });
   }
 
-  // Root spurs: short surface roots sagging from the base to the ground.
-  // Mature and old trees only — saplings haven't earned them — and drawn LAST
-  // so the extra rand() calls don't shift any of the randomness above (the
-  // same seed keeps the same tree, plus roots).
+  // Root spurs: surface roots that CONTINUE the trunk's base star into the
+  // ground — each spur runs along a ridge of the star cross-section, so it
+  // reads as the trunk's own flute running out into the soil rather than a
+  // tube stuck on the side. Mature and old trees only — saplings haven't
+  // earned them — and drawn LAST so any extra rand() calls can't shift the
+  // randomness above (the same seed keeps the same tree, plus roots).
   // Palms are excluded: a palm's base is a smooth column, and root spurs on it
   // read as tentacles.
-  if (fx.age >= 0.35 && Number(s.detail) >= 1 && profile.builder !== 'palm') {
-    const at = spineAt(spine, 0.04);
-    const count = 3 + (fx.giant > 0.3 ? 1 : 0);
-    for (let i = 0; i < count; i += 1) {
+  // The star's phase lives on its own stream so giving mid-age trees a star
+  // (they used to have none) cannot shift the main stream either.
+  const basePhase = rng(subSeed(Number(s.seed), 31))() * Math.PI * 2;
+  const plank = fx.buttress > 0.03;
+  const spurring = fx.age >= 0.35 && Number(s.detail) >= 1 && profile.builder !== 'palm';
+  const starLobes = plank ? 5 : 3 + (fx.giant > 0.3 ? 1 : 0);
+  if (spurring) {
+    const at = spineAt(spine, 0.012);
+    for (let i = 0; i < starLobes; i += 1) {
       // Per-spur stream — see subSeed().
       const rrand = rng(subSeed(Number(s.seed), 29, i));
-      const a = GOLDEN * i + rrand() * 0.6;
-      const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+      // Lobe ridge (cos(a·lobes + phase) = 1) mapped from the mesher's base
+      // ring frame (near-vertical tangent, X seed) to a world azimuth: a
+      // ring angle a lands at world angle -a - PI/2.
+      const aRing = (Math.PI * 2 * i - basePhase) / starLobes;
+      const theta = -aRing - Math.PI / 2;
+      const dir = new THREE.Vector3(Math.cos(theta), 0, Math.sin(theta));
       // Short and stout: surface roots hug the trunk. Long thin spurs read as
-      // spider legs. Tips sink slightly below grade so they end IN the ground.
-      const reach = at.r * (1.0 + rrand() * 0.55) * (1 + fx.age * 0.35);
-      const end = at.p.clone().addScaledVector(dir, reach).setY(-0.04);
+      // spider legs. Tips sink slightly below grade so they end IN the ground,
+      // and the centerline starts at the ground ring and only descends — the
+      // old higher attachment left spurs hovering level like a caltrop.
+      const reach = at.r * (1.05 + rrand() * 0.5) * (1 + fx.age * 0.35);
+      const end = at.p.clone().addScaledVector(dir, reach).setY(-0.05);
       branches.push({
-        points: curveBranch(at.p.clone(), end, -0.1, 0, 3),
-        radius: at.r * 0.34,
-        endRadius: at.r * 0.14,
+        points: curveBranch(at.p.clone(), end, -0.06, 0, 4),
+        radius: at.r * 0.45,
+        endRadius: at.r * 0.12,
         depth: 0,
         parent: -1,
         terminal: false,
@@ -597,8 +610,14 @@ export function buildSkeleton(params) {
     // Plank buttress flanges at the base of giants and ancient veterans; the
     // mesher turns this into a star-shaped base cross-section that rounds out
     // to circular by `fadeT` of trunk height.
-    buttress: fx.buttress > 0.03
-      ? { amount: fx.buttress, lobes: 5, phase: rand() * Math.PI * 2, fadeT: 0.16 }
+    buttress: plank
+      ? { amount: fx.buttress, lobes: starLobes, phase: basePhase, fadeT: 0.16 }
+      : null,
+    // Subtle base star for trees that carry root spurs but no planks: the
+    // ridges the spurs continue. Consumed by the mesher exactly like buttress
+    // (buttress wins when both would apply — they never stack).
+    rootFlare: !plank && spurring
+      ? { amount: 0.1 + fx.age * 0.06, lobes: starLobes, phase: basePhase, fadeT: 0.09 }
       : null,
     params: s,
   };
@@ -1039,8 +1058,11 @@ function buildConifer(ctx) {
       const id = branches.length;
       branches.push({
         points: curveBranch(start, end, -0.05, profile.droop * 0.5, 3),
-        radius: at.r * 0.34,
-        endRadius: at.r * 0.1,
+        // Absolute caps keep the piercing tips twig-like at any scale: tied
+        // to raw trunk radius, a 42m giant grew 0.4m stubs shaped like the
+        // skirts themselves. Garden-scale pines sit under the cap untouched.
+        radius: Math.min(at.r * 0.34, 0.14),
+        endRadius: Math.min(at.r * 0.1, 0.05),
         depth: 0,
         parent: -1,
         terminal: true,
@@ -1051,7 +1073,7 @@ function buildConifer(ctx) {
       // broadleaf terminals do. Use the real curved tip, not the pre-droop end.
       if (ctx.bare) {
         const pts = branches[id].points;
-        sproutTwigs(ctx, id, pts[pts.length - 1].clone(), dir, at.r * 0.1, 0);
+        sproutTwigs(ctx, id, pts[pts.length - 1].clone(), dir, Math.min(at.r * 0.1, 0.05), 0);
       }
     }
 

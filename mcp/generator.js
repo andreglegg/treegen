@@ -328,17 +328,21 @@ export function buildTree(params = {}) {
   // circular partway up. The spine fraction covered by the base shrinks when
   // leader chains are appended, so the fade is scaled to spine-local t.
   const spineFrac = skel.spine.length;
-  const buttressFn = skel.buttress
+  // Root-bearing trees without planks carry a subtler star (rootFlare) whose
+  // ridges the root spurs continue — same machinery, smaller amount.
+  const star = skel.buttress ?? skel.rootFlare;
+  const buttressFn = star
     ? (t01, angle, totalRings) => {
         const spineT = t01 * (totalRings / spineFrac);
-        const fade = Math.max(0, 1 - spineT / skel.buttress.fadeT);
+        const fade = Math.max(0, 1 - spineT / star.fadeT);
         if (fade <= 0) return 1;
-        const lobe = Math.max(0, Math.cos(angle * skel.buttress.lobes + skel.buttress.phase)) ** 3;
-        return 1 + skel.buttress.amount * lobe * fade ** 1.5;
+        const lobe = Math.max(0, Math.cos(angle * star.lobes + star.phase)) ** 3;
+        return 1 + star.amount * lobe * fade ** 1.5;
       }
     : null;
   // Giants deserve extra silhouette resolution at the base where the player
-  // stands; +4 sides only when flanges exist.
+  // stands; +4 sides only when plank flanges exist — the subtle root star
+  // reads fine at stock resolution.
   const trunkSideCount = skel.buttress ? trunkSides + 4 : trunkSides;
 
   // Bark fluting: shallow vertical lobes fading out partway up the trunk.
@@ -389,13 +393,20 @@ export function buildTree(params = {}) {
     // deliberate dead spikes (which END in open air) from broken branches —
     // and the shadow bark tone, because dead wood is darker than live bark.
     const name = head.dead ? `dead_branch_${deadIndex}` : `branch_segment_${branchIndex}`;
+    // Root spurs are vertically stretched blades where they leave the trunk,
+    // rounding out toward the tip — the trunk's flute continuing into the
+    // soil, then relaxing. Deterministic, so no stream impact.
+    const rootRadial = head.root
+      ? (t01, a) => 1 + 0.5 * (1 - t01) * Math.abs(Math.sin(a))
+      : null;
     addBark(
       name,
       pts,
       radii,
       sides,
       'end',
-      head.dead || head.depth >= 2 ? barkAltMat : barkMat
+      head.dead || head.depth >= 2 ? barkAltMat : barkMat,
+      rootRadial
     );
     if (head.dead) deadIndex += 1;
     else branchIndex += 1;

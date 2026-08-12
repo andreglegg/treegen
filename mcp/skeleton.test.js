@@ -363,3 +363,54 @@ test('giant old broadleaf drops aerial roots to the ground', () => {
   assert.ok(!make({ species: 'oak', height: 10, age: 0.8 }).branches.some((b) => b.aerial), 'small oak grew aerial roots');
   assert.ok(!make({ species: 'oak', height: 30, age: 0.4, trunkRadius: 1.1 }).branches.some((b) => b.aerial), 'young giant grew aerial roots');
 });
+
+test('root spurs start at the ground ring and continue the base star ridges', () => {
+  const skel = make({ species: 'oak', seed: 429757 });
+  const star = skel.buttress ?? skel.rootFlare;
+  assert.ok(star, 'a root-bearing tree carries a base star');
+  const roots = skel.branches.filter((b) => b.root);
+  assert.equal(roots.length, star.lobes, 'one spur per lobe');
+  for (const b of roots) {
+    const p0 = b.points[0];
+    assert.ok(p0.y <= Number(skel.params.height) * 0.03, `spur attaches high: y=${p0.y}`);
+    const p1 = b.points[1];
+    const theta = Math.atan2(p1.z - p0.z, p1.x - p0.x);
+    // Invert the mesher's base ring frame (near-vertical tangent, X seed):
+    // ring angle a maps to world azimuth -a - PI/2.
+    const aRing = -theta - Math.PI / 2;
+    const ridge = Math.cos(aRing * star.lobes + star.phase);
+    assert.ok(ridge > 0.95, `spur off the lobe ridge (cos=${ridge.toFixed(3)})`);
+    const tip = b.points[b.points.length - 1];
+    assert.ok(tip.y < 0, 'spur tip should sink below grade');
+  }
+});
+
+test('mid-age trees get a subtle root flare, giants keep plank buttresses', () => {
+  const mid = make({ species: 'oak' });
+  assert.equal(mid.buttress, null, 'mid-age oak is no plank-buttress tree');
+  assert.ok(mid.rootFlare && mid.rootFlare.amount < 0.2, 'subtle star present');
+  const giant = make(presets.giant);
+  assert.ok(giant.buttress && giant.buttress.amount > 0.25, 'giant keeps planks');
+  assert.equal(giant.rootFlare, null, 'planks and root flare never stack');
+});
+
+test('saplings earn neither root spurs nor a base star', () => {
+  const skel = make(presets.sapling);
+  assert.equal(skel.branches.filter((b) => b.root).length, 0);
+  assert.equal(skel.buttress, null);
+  assert.equal(skel.rootFlare, null);
+});
+
+test('conifer whorl stubs stay twig-thin at giant scale', () => {
+  const giant = make(presets.giant);
+  const whorl = giant.branches.filter((b) => b.terminal && !b.root && !b.twig && b.depth === 0);
+  assert.ok(whorl.length > 10, 'giant pine should carry whorl branches');
+  for (const b of whorl) {
+    assert.ok(b.radius <= 0.14 + 1e-9, `whorl stub too fat: ${b.radius.toFixed(3)}m`);
+    assert.ok(b.endRadius <= 0.05 + 1e-9, `whorl tip too fat: ${b.endRadius.toFixed(3)}m`);
+  }
+  // A garden-scale pine sits under the cap and must be numerically untouched.
+  const small = make(presets.pine);
+  const smallWhorl = small.branches.filter((b) => b.terminal && !b.root && !b.twig && b.depth === 0);
+  for (const b of smallWhorl) assert.ok(b.radius < 0.14, 'cap must not bind on a small pine');
+});
